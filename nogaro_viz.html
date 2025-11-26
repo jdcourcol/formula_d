@@ -836,17 +836,21 @@
             };
 
             // Create the plot
-            Plotly.newPlot('plot-container', data, layout, { responsive: true });
-            animationState.plotContainer = 'plot-container'; // Store ID string for Plotly
+            Plotly.newPlot('plot-container', data, layout, { responsive: true }).then(() => {
+                animationState.plotContainer = 'plot-container'; // Store ID string for Plotly
 
-            // Create JavaScript-based animated markers
-            createCarMarkers(carIds, carToPlayer, player_label);
-            
-            // Create animation controls
-            createAnimationControls(carIds, carToPlayer);
-            
-            // Initialize animation (show cars at starting positions)
-            updateAnimationTime(0);
+                // Create JavaScript-based animated markers
+                createCarMarkers(carIds, carToPlayer, player_label);
+                
+                // Create animation controls
+                createAnimationControls(carIds, carToPlayer);
+                
+                // Initialize animation (show cars at starting positions)
+                // Use setTimeout to ensure Plotly layout is fully ready
+                setTimeout(() => {
+                    updateAnimationTime(0);
+                }, 100);
+            });
         }
 
         // Create JavaScript-based car markers
@@ -1209,14 +1213,17 @@
                         const plotWidth = plotRect.width;
                         const plotHeight = plotRect.height;
                         
-                        pixelX = (point.x / imageWidth) * plotWidth + offsetX;
-                        pixelY = ((imageHeight - point.y) / imageHeight) * plotHeight + offsetY;
+                        if (plotWidth > 0 && plotHeight > 0) {
+                            pixelX = (point.x / imageWidth) * plotWidth + offsetX;
+                            pixelY = ((imageHeight - point.y) / imageHeight) * plotHeight + offsetY;
+                        } else {
+                            // If plot not ready yet, skip this update
+                            return;
+                        }
                     }
                     
-                    // Show marker if animation is playing
-                    if (animationState.isPlaying) {
-                        marker.style.display = 'block';
-                    }
+                    // Show marker (always visible, not just when playing)
+                    marker.style.display = 'block';
                     
                     // Calculate rotation based on bearing
                     // Bearing is in degrees (0-360), where 0 is typically north/up

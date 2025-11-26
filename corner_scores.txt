@@ -1,0 +1,386 @@
+====================================================================================================
+CORNER SCORES BY CAR
+====================================================================================================
+
+Car ID: 23880
+----------------------------------------------------------------------------------------------------
+  Corner 1 (La Ferme):
+    Attempts: 5
+    Total Score: 0.2000
+    Average Score: 0.0400
+    Individual Scores: ['0.0000', '0.7000', '-0.5000', '0.0000', '0.0000']
+
+  Corner 2 (Claude Fior):
+    Attempts: 3
+    Total Score: 0.6000
+    Average Score: 0.2000
+    Individual Scores: ['0.6000', '0.0000', '0.0000']
+
+  Corner 3 (Caupenne):
+    Attempts: 3
+    Total Score: 0.6000
+    Average Score: 0.2000
+    Individual Scores: ['0.0000', '0.2000', '0.4000']
+
+  Corner 4 (L'Escargot):
+    Attempts: 3
+    Total Score: 0.3333
+    Average Score: 0.1111
+    Individual Scores: ['-0.6667', '0.5000', '0.5000']
+
+  Corner 5 (L'École):
+    Attempts: 2
+    Total Score: -0.8333
+    Average Score: -0.4167
+    Individual Scores: ['0.0000', '-0.8333']
+
+  Corner 6 (Roger Dubos):
+    Attempts: 4
+    Total Score: 0.8667
+    Average Score: 0.2167
+    Individual Scores: ['0.6667', '0.3333', '-0.3333', '0.2000']
+
+  Corner 7 (Henri Oreiller):
+    Attempts: 3
+    Total Score: 0.2000
+    Average Score: 0.0667
+    Individual Scores: ['0.0000', '0.0000', '0.2000']
+
+  Corner 8 (Claude Storez):
+    Attempts: 4
+    Total Score: -0.1000
+    Average Score: -0.0250
+    Individual Scores: ['0.3000', '-0.6000', '0.0000', '0.2000']
+
+  Corner 9 ('S' du Lac):
+    Attempts: 3
+    Total Score: -0.0333
+    Average Score: -0.0111
+    Individual Scores: ['-0.8333', '0.0000', '0.8000']
+
+  CAR TOTALS:
+    Total Attempts: 30
+    Total Score: 1.8333
+    Average Score: 0.0611
+
+Car ID: 28873
+----------------------------------------------------------------------------------------------------
+  Corner 1 (La Ferme):
+    Attempts: 1
+    Total Score: 0.0000
+    Average Score: 0.0000
+    Individual Scores: ['0.0000']
+
+  Corner 2 (Claude Fior):
+    Attempts: 1
+    Total Score: 0.4000
+    Average Score: 0.4000
+    Individual Scores: ['0.4000']
+
+  CAR TOTALS:
+    Total Attempts: 2
+    Total Score: 0.4000
+    Average Score: 0.2000
+
+Car ID: 29005
+----------------------------------------------------------------------------------------------------
+  Corner 1 (La Ferme):
+    Attempts: 6
+    Total Score: 0.0667
+    Average Score: 0.0111
+    Individual Scores: ['-0.4000', '0.0000', '0.4000', '0.1667', '-0.1000', '0.0000']
+
+  Corner 2 (Claude Fior):
+    Attempts: 3
+    Total Score: 0.6000
+    Average Score: 0.2000
+    Individual Scores: ['0.6000', '0.0000', '0.0000']
+
+  Corner 3 (Caupenne):
+    Attempts: 3
+    Total Score: 0.1667
+    Average Score: 0.0556
+    Individual Scores: ['0.1667', '0.0000', '0.0000']
+
+  Corner 4 (L'Escargot):
+    Attempts: 4
+    Total Score: 0.8333
+    Average Score: 0.2083
+    Individual Scores: ['-0.3333', '0.0000', '0.8333', '0.3333']
+
+  Corner 5 (L'École):
+    Attempts: 4
+    Total Score: -0.9000
+    Average Score: -0.2250
+    Individual Scores: ['0.0000', '-0.1000', '0.0000', '-0.8000']
+
+  Corner 6 (Roger Dubos):
+    Attempts: 3
+    Total Score: -0.5667
+    Average Score: -0.1889
+    Individual Scores: ['0.0000', '0.3333', '-0.9000']
+
+  Corner 7 (Henri Oreiller):
+    Attempts: 3
+    Total Score: 0.1667
+    Average Score: 0.0556
+    Individual Scores: ['0.0000', '0.0000', '0.1667']
+
+  Corner 8 (Claude Storez):
+    Attempts: 4
+    Total Score: -0.5000
+    Average Score: -0.1250
+    Individual Scores: ['-0.3000', '0.0000', '0.4000', '-0.6000']
+
+  Corner 9 ('S' du Lac):
+    Attempts: 5
+    Total Score: -0.2667
+    Average Score: -0.0533
+    Individual Scores: ['0.3333', '-0.2000', '0.0000', '-0.4000', '0.0000']
+
+  CAR TOTALS:
+    Total Attempts: 35
+    Total Score: -0.4000
+    Average Score: -0.0114
+
+Car ID: 30198
+----------------------------------------------------------------------------------------------------
+  Corner 1 (La Ferme):
+    Attempts: 5
+    Total Score: 0.8000
+    Average Score: 0.1600
+    Individual Scores: ['0.3333', '0.4000', '-0.1000', '0.0000', '0.1667']
+
+  Corner 2 (Claude Fior):
+    Attempts: 3
+    Total Score: -0.4000
+    Average Score: -0.1333
+    Individual Scores: ['-0.4000', '0.0000', '0.0000']
+
+  Corner 3 (Caupenne):
+    Attempts: 2
+    Total Score: -0.8333
+    Average Score: -0.4167
+    Individual Scores: ['-0.8333', '0.0000']
+
+  Corner 4 (L'Escargot):
+    Attempts: 2
+    Total Score: 0.1000
+    Average Score: 0.0500
+    Individual Scores: ['0.1000', '0.0000']
+
+  Corner 5 (L'École):
+    Attempts: 3
+    Total Score: -0.8000
+    Average Score: -0.2667
+    Individual Scores: ['-0.6000', '-0.2000', '0.0000']
+
+  Corner 6 (Roger Dubos):
+    Attempts: 3
+    Total Score: 0.0000
+    Average Score: 0.0000
+    Individual Scores: ['-0.3333', '0.0000', '0.3333']
+
+  Corner 7 (Henri Oreiller):
+    Attempts: 2
+    Total Score: 0.0000
+    Average Score: 0.0000
+    Individual Scores: ['0.0000', '0.0000']
+
+  Corner 8 (Claude Storez):
+    Attempts: 2
+    Total Score: 0.4000
+    Average Score: 0.2000
+    Individual Scores: ['0.0000', '0.4000']
+
+  Corner 9 ('S' du Lac):
+    Attempts: 4
+    Total Score: -0.6000
+    Average Score: -0.1500
+    Individual Scores: ['-0.4000', '0.0000', '-0.2000', '0.0000']
+
+  CAR TOTALS:
+    Total Attempts: 26
+    Total Score: -1.3333
+    Average Score: -0.0513
+
+Car ID: 30543
+----------------------------------------------------------------------------------------------------
+  Corner 1 (La Ferme):
+    Attempts: 3
+    Total Score: -0.4000
+    Average Score: -0.1333
+    Individual Scores: ['0.0000', '-0.4000', '0.0000']
+
+  Corner 2 (Claude Fior):
+    Attempts: 2
+    Total Score: 0.1667
+    Average Score: 0.0833
+    Individual Scores: ['0.1667', '0.0000']
+
+  Corner 3 (Caupenne):
+    Attempts: 3
+    Total Score: -0.6000
+    Average Score: -0.2000
+    Individual Scores: ['-0.6000', '0.0000', '0.0000']
+
+  Corner 4 (L'Escargot):
+    Attempts: 2
+    Total Score: 0.8333
+    Average Score: 0.4167
+    Individual Scores: ['0.3333', '0.5000']
+
+  Corner 5 (L'École):
+    Attempts: 3
+    Total Score: -0.5000
+    Average Score: -0.1667
+    Individual Scores: ['0.0000', '-0.5000', '0.0000']
+
+  Corner 6 (Roger Dubos):
+    Attempts: 2
+    Total Score: -0.6667
+    Average Score: -0.3333
+    Individual Scores: ['-0.6667', '0.0000']
+
+  Corner 7 (Henri Oreiller):
+    Attempts: 1
+    Total Score: 0.0000
+    Average Score: 0.0000
+    Individual Scores: ['0.0000']
+
+  Corner 8 (Claude Storez):
+    Attempts: 2
+    Total Score: -0.6000
+    Average Score: -0.3000
+    Individual Scores: ['-0.6000', '0.0000']
+
+  Corner 9 ('S' du Lac):
+    Attempts: 2
+    Total Score: -0.5000
+    Average Score: -0.2500
+    Individual Scores: ['-0.5000', '0.0000']
+
+  CAR TOTALS:
+    Total Attempts: 20
+    Total Score: -2.2667
+    Average Score: -0.1133
+
+Car ID: 31485
+----------------------------------------------------------------------------------------------------
+  Corner 1 (La Ferme):
+    Attempts: 1
+    Total Score: 0.2000
+    Average Score: 0.2000
+    Individual Scores: ['0.2000']
+
+  Corner 2 (Claude Fior):
+    Attempts: 2
+    Total Score: 0.3333
+    Average Score: 0.1667
+    Individual Scores: ['0.3333', '0.0000']
+
+  Corner 3 (Caupenne):
+    Attempts: 1
+    Total Score: 0.2000
+    Average Score: 0.2000
+    Individual Scores: ['0.2000']
+
+  Corner 4 (L'Escargot):
+    Attempts: 1
+    Total Score: 0.3333
+    Average Score: 0.3333
+    Individual Scores: ['0.3333']
+
+  Corner 5 (L'École):
+    Attempts: 1
+    Total Score: 0.6667
+    Average Score: 0.6667
+    Individual Scores: ['0.6667']
+
+  Corner 6 (Roger Dubos):
+    Attempts: 2
+    Total Score: 0.2333
+    Average Score: 0.1167
+    Individual Scores: ['-0.1667', '0.4000']
+
+  Corner 7 (Henri Oreiller):
+    Attempts: 1
+    Total Score: 0.4000
+    Average Score: 0.4000
+    Individual Scores: ['0.4000']
+
+  Corner 8 (Claude Storez):
+    Attempts: 1
+    Total Score: 0.0000
+    Average Score: 0.0000
+    Individual Scores: ['0.0000']
+
+  Corner 9 ('S' du Lac):
+    Attempts: 1
+    Total Score: 0.6000
+    Average Score: 0.6000
+    Individual Scores: ['0.6000']
+
+  CAR TOTALS:
+    Total Attempts: 11
+    Total Score: 2.9667
+    Average Score: 0.2697
+
+====================================================================================================
+SUMMARY BY CORNER
+====================================================================================================
+
+Corner 1 (La Ferme):
+  Cars: 6
+  Total Attempts: 21
+  Total Score: 0.8667
+  Average Score: 0.0413
+
+Corner 2 (Claude Fior):
+  Cars: 6
+  Total Attempts: 14
+  Total Score: 1.7000
+  Average Score: 0.1214
+
+Corner 3 (Caupenne):
+  Cars: 5
+  Total Attempts: 12
+  Total Score: -0.4667
+  Average Score: -0.0389
+
+Corner 4 (L'Escargot):
+  Cars: 5
+  Total Attempts: 12
+  Total Score: 2.4333
+  Average Score: 0.2028
+
+Corner 5 (L'École):
+  Cars: 5
+  Total Attempts: 13
+  Total Score: -2.3667
+  Average Score: -0.1821
+
+Corner 6 (Roger Dubos):
+  Cars: 5
+  Total Attempts: 14
+  Total Score: -0.1333
+  Average Score: -0.0095
+
+Corner 7 (Henri Oreiller):
+  Cars: 5
+  Total Attempts: 10
+  Total Score: 0.7667
+  Average Score: 0.0767
+
+Corner 8 (Claude Storez):
+  Cars: 5
+  Total Attempts: 13
+  Total Score: -0.8000
+  Average Score: -0.0615
+
+Corner 9 ('S' du Lac):
+  Cars: 5
+  Total Attempts: 15
+  Total Score: -0.8000
+  Average Score: -0.0533
+

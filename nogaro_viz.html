@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nogaro Circuit Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        #controls-container {
+            margin-bottom: 10px;
+        }
+        .car-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .car-label {
+            font-size: 9px;
+            color: white;
+            background-color: rgba(100, 100, 100, 0.8);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            padding: 2px 4px;
+            margin-right: 10px;
+            min-width: 80px;
+            text-align: right;
+            font-weight: bold;
+        }
+        .lap-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        .lap-button {
+            font-size: 9px;
+            padding: 2px 3px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            user-select: none;
+        }
+        .lap-button:hover {
+            background-color: rgba(240, 240, 240, 0.9);
+        }
+        .lap-button.active {
+            background-color: rgba(200, 200, 255, 0.9);
+            border-color: rgba(0, 0, 200, 0.4);
+        }
+        #plot-container {
+            width: 100%;
+            height: calc(100vh - 250px);
+            position: relative;
+        }
+        .car-marker {
+            position: absolute;
+            width: 176px; /* Full car width from sprite sheet */
+            height: 360px; /* Full car height from sprite sheet */
+            background-image: url('cars.webp');
+            background-size: 1800px 720px; /* Full image dimensions */
+            background-repeat: no-repeat;
+            /* Scale to match space size from scaled_polygon: spaces are ~107x75px, car is 176x360px */
+            /* Scale factor based on height: 75/360 ≈ 0.2083 */
+            /* Don't set transform here - GSAP will handle it */
+            pointer-events: none;
+            z-index: 1000;
+            image-rendering: crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            transform-origin: center center;
+        }
+        /* Cars are in a 900x364 rectangle at bottom left of 1800x720 image */
+        /* Rectangle is at y = 720 - 364 = 356 from top */
+        /* Cars arranged left to right: red, blue, yellow, green, white */
+        /* Each car is 176x360px, positioned at bottom of rectangle (y = 356) */
+        .car-marker.jxcr0w {
+            background-position: 0 -356px; /* Red car - first position (leftmost) */
+        }
+        .car-marker.jdregister {
+            background-position: -352px -356px; /* Yellow car - third position (2 × 176px = 352px) */
+        }
+        .car-marker.mikeggg {
+            background-position: -528px -356px; /* Green car - fourth position (3 × 176px = 528px) */
+        }
+        .animation-controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .animation-button {
+            padding: 5px 15px;
+            font-size: 12px;
+            cursor: pointer;
+            background-color: rgba(100, 150, 255, 0.8);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+        }
+        .animation-button:hover {
+            background-color: rgba(100, 150, 255, 1);
+        }
+        .animation-button:disabled {
+            background-color: rgba(200, 200, 200, 0.5);
+            cursor: not-allowed;
+        }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .speed-control label {
+            font-size: 11px;
+        }
+        .speed-control input {
+            width: 60px;
+        }
+    </style>
+</head>
+<body>
+    <div id="animation-controls" class="animation-controls"></div>
+    <div id="controls-container"></div>
+    <div id="plot-container"></div>
+
+    <script>
+        // Color palette for different die_types
+        const dieTypeColors = {
+            1: 'rgba(255, 235, 59, 0.6)',    // Yellow (D4)
+            2: 'rgba(255, 152, 0, 0.6)',     // Orange (D6)
+            3: 'rgba(244, 67, 54, 0.6)',     // Red (D8)
+            4: 'rgba(76, 175, 80, 0.6)',     // Green (D12)
+            5: 'rgba(156, 39, 176, 0.6)',    // Purple (D20)
+            6: 'rgba(33, 150, 243, 0.6)',    // Blue (D30)
+            7: 'rgba(33, 33, 33, 0.6)',      // Black (Black D20)
+            null: 'rgba(200, 200, 200, 0.3)' // Grey for spaces not in events
+        };
+
+        // Function to build space_to_die_type mapping for selected laps of a car
+        function buildSpaceMapping(carLaps, selectedLapIndices) {
+            const spaceToDieType = {};
+            for (const lapIdx of selectedLapIndices) {
+                if (lapIdx >= 0 && lapIdx < carLaps.length) {
+                    const lapEvents = carLaps[lapIdx];
+                    for (const event of lapEvents) {
+                        const dieType = event.die_type;
+                        if (dieType !== null && dieType !== undefined) {
+                            const spaces = event.spaces || [];
+                            for (const space of spaces) {
+                                const spaceStr = String(space);
+                                // If a space appears in multiple events, use the first one encountered
+                                if (!(spaceStr in spaceToDieType)) {
+                                    spaceToDieType[spaceStr] = dieType;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return spaceToDieType;
+        }
+        player_label = {
+            '88064074':'jdregister',
+            '88482137': 'mikeggg',
+            '91103118': 'jxcr0w',
+        };
+
+        // Color palette for players
+        const playerColors = {
+            'jdregister': {
+                primary: 'rgba(184, 134, 11, 0.9)',    // Dark Goldenrod
+                secondary: 'rgba(139, 128, 0, 0.9)'    // Dark Olive
+            },
+            'jxcr0w': {
+                primary: 'rgba(255, 0, 0, 0.9)',        // Red
+                secondary: 'rgba(255, 102, 102, 0.9)'   // Light Red
+            },
+            'mikeggg': {
+                primary: 'rgba(0, 255, 0, 0.9)',        // Green
+                secondary: 'rgba(0, 128, 0, 0.9)'        // Dark Green
+            }
+        };
+        
+        // Fallback colors for unknown players
+        const fallbackColors = [
+            'rgba(0, 0, 255, 0.9)',      // Blue
+            'rgba(255, 165, 0, 0.9)',    // Orange
+            'rgba(128, 0, 128, 0.9)',    // Purple
+        ];
+
+        // Bezier curve interpolation function
+        // Returns a point on a cubic Bezier curve at parameter t (0 to 1)
+        function bezierPoint(t, p0, p1, p2, p3) {
+            const u = 1 - t;
+            const tt = t * t;
+            const uu = u * u;
+            const uuu = uu * u;
+            const ttt = tt * t;
+
+            const x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
+            const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+
+            return { x, y };
+        }
+
+        // Create control points for Bezier curve between two points
+        // Uses the bearing/direction to create smooth curves
+        function createBezierPath(p0, p1, bearing0, bearing1, nogaroSpaces) {
+            // If we have bearing information, use it to create control points
+            // Otherwise, create simple control points
+            const dx = p1.x - p0.x;
+            const dy = p1.y - p0.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // Control point distance (adjust for smoothness)
+            const controlDist = dist * 0.3;
+            
+            // Use bearing if available, otherwise use direction vector
+            let angle0, angle1;
+            if (bearing0 !== undefined && bearing0 !== null) {
+                angle0 = (bearing0 * Math.PI) / 180; // Convert to radians
+            } else {
+                angle0 = Math.atan2(dy, dx);
+            }
+            
+            if (bearing1 !== undefined && bearing1 !== null) {
+                angle1 = (bearing1 * Math.PI) / 180;
+            } else {
+                angle1 = Math.atan2(dy, dx);
+            }
+            
+            const cp1 = {
+                x: p0.x + Math.cos(angle0) * controlDist,
+                y: p0.y + Math.sin(angle0) * controlDist
+            };
+            
+            const cp2 = {
+                x: p1.x - Math.cos(angle1) * controlDist,
+                y: p1.y - Math.sin(angle1) * controlDist
+            };
+            
+            return { cp1, cp2 };
+        }
+
+        // Generate interpolated points along a Bezier path
+        // Higher resolution for smoother continuous motion
+        function generateBezierPoints(p0, p1, bearing0, bearing1, nogaroSpaces, numPoints = 100) {
+            const { cp1, cp2 } = createBezierPath(p0, p1, bearing0, bearing1, nogaroSpaces);
+            const points = [];
+            
+            // Interpolate bearing (handle angle wrapping)
+            let startBearing = p0.bearing !== undefined ? p0.bearing : bearing0;
+            let endBearing = p1.bearing !== undefined ? p1.bearing : bearing1;
+            
+            for (let i = 0; i <= numPoints; i++) {
+                const t = i / numPoints;
+                const point = bezierPoint(t, p0, cp1, cp2, p1);
+                
+                // Interpolate bearing
+                let bearing = startBearing;
+                if (startBearing !== undefined && endBearing !== undefined) {
+                    let diff = endBearing - startBearing;
+                    // Handle 360° wrap
+                    if (Math.abs(diff) > 180) {
+                        if (diff > 0) diff -= 360;
+                        else diff += 360;
+                    }
+                    bearing = (startBearing + diff * t) % 360;
+                    if (bearing < 0) bearing += 360;
+                }
+                
+                point.bearing = bearing;
+                points.push(point);
+            }
+            
+            return points;
+        }
+
+        // Build trajectory for a car from all events
+        // Skips the first event of each lap (except first lap) as it's a continuation
+        function buildCarTrajectory(carId, carsLaps, nogaroSpaces) {
+            const trajectory = [];
+            let globalEventIndex = 0;
+            
+            for (let lapIdx = 0; lapIdx < carsLaps.length; lapIdx++) {
+                const lapEvents = carsLaps[lapIdx];
+                
+                for (let eventIdx = 0; eventIdx < lapEvents.length; eventIdx++) {
+                    // Skip first event of each lap (except the first lap)
+                    // The first event of a lap is actually the continuation of the previous lap
+                    if (lapIdx > 0 && eventIdx === 0) {
+                        continue; // Skip this event but don't increment globalEventIndex
+                    }
+                    
+                    const event = lapEvents[eventIdx];
+                    const spaces = event.spaces || [];
+                    
+                    if (spaces.length === 0) {
+                        globalEventIndex++;
+                        continue;
+                    }
+                    
+                    // Get coordinates for each space in this event
+                    const eventPoints = [];
+                    for (const spaceId of spaces) {
+                        const spaceStr = String(spaceId);
+                        if (spaceStr in nogaroSpaces) {
+                            const spaceData = nogaroSpaces[spaceStr];
+                            const x = spaceData.scaled_center_x !== undefined ? spaceData.scaled_center_x : spaceData.center_x;
+                            const y = spaceData.scaled_center_y !== undefined ? spaceData.scaled_center_y : spaceData.center_y;
+                            const bearing = spaceData.bearing;
+                            
+                            eventPoints.push({
+                                x, y, bearing,
+                                spaceId: spaceStr,
+                                eventIndex: globalEventIndex,
+                                lapIndex: lapIdx,
+                                eventInLap: eventIdx
+                            });
+                        }
+                    }
+                    
+                    if (eventPoints.length === 0) {
+                        globalEventIndex++;
+                        continue;
+                    }
+                    
+                    // Create Bezier interpolated path between consecutive points
+                    for (let i = 0; i < eventPoints.length; i++) {
+                        if (i === 0 && trajectory.length > 0) {
+                            // Connect to previous point (from previous event)
+                            const prevPoint = trajectory[trajectory.length - 1];
+                            const currentPoint = eventPoints[i];
+                            const bezierPoints = generateBezierPoints(
+                                prevPoint, currentPoint,
+                                prevPoint.bearing, currentPoint.bearing,
+                                nogaroSpaces, 100
+                            );
+                            // Add intermediate points (skip first as it's the same as prevPoint)
+                            for (let j = 1; j < bezierPoints.length; j++) {
+                                trajectory.push({
+                                    ...bezierPoints[j],
+                                    spaceId: currentPoint.spaceId,
+                                    eventIndex: globalEventIndex,
+                                    lapIndex: lapIdx,
+                                    eventInLap: eventIdx,
+                                    isInterpolated: true
+                                });
+                            }
+                        } else if (i > 0) {
+                            // Connect within the same event
+                            const prevPoint = eventPoints[i - 1];
+                            const currentPoint = eventPoints[i];
+                            const bezierPoints = generateBezierPoints(
+                                prevPoint, currentPoint,
+                                prevPoint.bearing, currentPoint.bearing,
+                                nogaroSpaces, 100
+                            );
+                            // Add intermediate points (skip first)
+                            for (let j = 1; j < bezierPoints.length; j++) {
+                                trajectory.push({
+                                    ...bezierPoints[j],
+                                    spaceId: currentPoint.spaceId,
+                                    eventIndex: globalEventIndex,
+                                    lapIndex: lapIdx,
+                                    eventInLap: eventIdx,
+                                    isInterpolated: true
+                                });
+                            }
+                        } else {
+                            // First point of first event (or first point after gap)
+                            trajectory.push(eventPoints[i]);
+                        }
+                    }
+                    
+                    globalEventIndex++;
+                }
+            }
+            
+            return trajectory;
+        }
+        // Group events by car_id (no lap splitting for animation)
+        function organizeEventsByCarAndLap(events, distances) {
+            // Group events by car_id
+            const eventsByCar = {};
+            for (const event of events) {
+                const carId = event.car_id;
+                if (!carId) continue;
+                if (!eventsByCar[carId]) {
+                    eventsByCar[carId] = [];
+                }
+                eventsByCar[carId].push(event);
+            }
+            
+            // For each car, put all events in a single "lap" array
+            // (maintaining the same structure for compatibility with existing code)
+            const carsLaps = {};
+            for (const [carId, carEvents] of Object.entries(eventsByCar)) {
+                // Put all events in a single lap array
+                carsLaps[carId] = [carEvents];
+            }
+            
+            return carsLaps;
+        }
+
+        // Load all JSON files
+        async function loadData() {
+            const [nogaro, events, carsLapsForUI, distances] = await Promise.all([
+                fetch('nogaro/nogaro.json').then(r => r.json()),
+                fetch('events.json').then(r => r.json()),
+                fetch('cars_laps.json').then(r => r.json()),
+                fetch('nogaro/circuit_graph_colored_distances.json').then(r => r.json())
+            ]);
+
+            // Build mapping from car_id to player_id
+            const carToPlayer = {};
+            for (const event of events) {
+                if (event.car_id && event.player_id) {
+                    carToPlayer[event.car_id] = event.player_id;
+                }
+            }
+
+            // Organize events by car (no lap splitting) for animation
+            const carsLapsForAnimation = organizeEventsByCarAndLap(events, distances);
+
+            return { nogaro, carsLapsForUI, carsLapsForAnimation, events, distances, carToPlayer };
+        }
+
+        // Animation state
+        let animationState = {
+            isPlaying: false,
+            currentTime: 0, // Time in milliseconds
+            maxTime: 0, // Maximum time for longest trajectory
+            speed: 1, // Speed multiplier (1x = normal)
+            animationInterval: null,
+            carTrajectories: {},
+            carMarkerTraceIndices: {}, // Now stores HTML element references
+            carInterpolators: {}, // D3 interpolators for each car
+            timePerEvent: 500, // Milliseconds per event (base time)
+            plotContainer: null, // Plotly plot container reference
+            imageWidth: 0, // Image width for coordinate conversion
+            imageHeight: 0 // Image height for coordinate conversion
+        };
+
+        // Create the visualization
+        async function createVisualization() {
+            const { nogaro, carsLapsForUI, carsLapsForAnimation, events, distances, carToPlayer } = await loadData();
+
+            const imageWidth = nogaro.width;
+            const imageHeight = nogaro.height;
+            
+            // Store image dimensions for coordinate conversion
+            animationState.imageWidth = imageWidth;
+            animationState.imageHeight = imageHeight;
+            const imagePath = 'nogaro/Nogaro.webp';
+            const nogaroSpaces = nogaro.spaces || {};
+
+            // Convert cars_laps from object with string keys to proper structure
+            const carIds = Object.keys(carsLapsForUI).map(id => parseInt(id));
+
+            // Build trajectories for all cars using events without lap splitting (for animation)
+            animationState.carTrajectories = {};
+            let maxEventCount = 0;
+            
+            for (const carId of carIds) {
+                const trajectory = buildCarTrajectory(carId, carsLapsForAnimation[carId], nogaroSpaces);
+                animationState.carTrajectories[carId] = trajectory;
+                
+                // Count unique events (events are separated by eventIndex changes)
+                let eventCount = 0;
+                let lastEventIndex = -1;
+                for (const point of trajectory) {
+                    if (point.eventIndex !== lastEventIndex) {
+                        eventCount++;
+                        lastEventIndex = point.eventIndex;
+                    }
+                }
+                maxEventCount = Math.max(maxEventCount, eventCount);
+            }
+            
+            // Calculate max time based on number of events
+            // All cars will reach their Nth event at the same time
+            animationState.maxTime = maxEventCount * animationState.timePerEvent;
+
+            // Create figure data
+            const data = [];
+            const traceIndicesByCarLap = {};
+            const markerTracesByCarLap = {};
+            let currentTraceIdx = 0;
+
+            // Process each car (use carsLapsForUI for lap buttons and traces)
+            for (const carId of carIds) {
+                const carLaps = carsLapsForUI[carId];
+                const numLaps = carLaps.length;
+
+                traceIndicesByCarLap[carId] = {};
+                markerTracesByCarLap[carId] = {};
+
+                // Build color mappings for this car
+                const carLapColorMappings = {
+                    'all': buildSpaceMapping(carLaps, Array.from({length: numLaps}, (_, i) => i))
+                };
+                for (let lapIdx = 0; lapIdx < numLaps; lapIdx++) {
+                    carLapColorMappings[`lap_${lapIdx}`] = buildSpaceMapping(carLaps, [lapIdx]);
+                }
+
+                // Create traces for "All Laps" for this car
+                const allLapsIndices = [];
+                for (const [spaceId, spaceData] of Object.entries(nogaroSpaces)) {
+                    const polygon = spaceData.polygon || [];
+                    if (polygon.length > 0) {
+                        const xCoords = polygon.map(p => p.x);
+                        const yCoords = polygon.map(p => p.y);
+                        xCoords.push(xCoords[0]);
+                        yCoords.push(yCoords[0]);
+
+                        const dieType = carLapColorMappings['all'][spaceId];
+                        const color = dieTypeColors[dieType] || dieTypeColors[null];
+                        const lineColor = color.replace('0.6', '0.8').replace('0.3', '0.5');
+
+                        data.push({
+                            x: xCoords,
+                            y: yCoords,
+                            mode: 'lines',
+                            name: `Car ${carId} - Space ${spaceId}`,
+                            line: { color: lineColor, width: 1 },
+                            fill: 'toself',
+                            fillcolor: color,
+                            showlegend: false,
+                            hoverinfo: 'text',
+                            text: `Car ${carId}<br>Space ${spaceId}<br>Die Type: ${dieType !== null && dieType !== undefined ? dieType : 'N/A'}`,
+                            hovertemplate: '%{text}<extra></extra>',
+                            visible: false
+                        });
+                        allLapsIndices.push(currentTraceIdx);
+                        currentTraceIdx++;
+                    }
+                }
+                traceIndicesByCarLap[carId]['all'] = allLapsIndices;
+
+                // Create traces for each individual lap for this car
+                for (let lapIdx = 0; lapIdx < numLaps; lapIdx++) {
+                    const lapKey = `lap_${lapIdx}`;
+                    const lapIndices = [];
+                    const lapMapping = carLapColorMappings[lapKey];
+                    const lapEvents = carLaps[lapIdx];
+
+                    // Get all spaces that appear in this lap's events
+                    const spacesInLap = new Set();
+                    for (const event of lapEvents) {
+                        const spaces = event.spaces || [];
+                        for (const space of spaces) {
+                            spacesInLap.add(String(space));
+                        }
+                    }
+
+                    // Only create traces for spaces that are in this lap
+                    for (const [spaceId, spaceData] of Object.entries(nogaroSpaces)) {
+                        if (!spacesInLap.has(spaceId)) {
+                            continue;
+                        }
+
+                        const polygon = spaceData.polygon || [];
+                        if (polygon.length > 0) {
+                            const xCoords = polygon.map(p => p.x);
+                            const yCoords = polygon.map(p => p.y);
+                            xCoords.push(xCoords[0]);
+                            yCoords.push(yCoords[0]);
+
+                            const dieType = lapMapping[spaceId];
+                            let color, lineColor;
+                            if (dieType !== null && dieType !== undefined) {
+                                color = dieTypeColors[dieType] || dieTypeColors[null];
+                                lineColor = color.replace('0.6', '0.8').replace('0.3', '0.5');
+                            } else {
+                                color = 'rgba(200, 200, 200, 0.1)';
+                                lineColor = 'rgba(200, 200, 200, 0.2)';
+                            }
+
+                            data.push({
+                                x: xCoords,
+                                y: yCoords,
+                                mode: 'lines',
+                                name: `Car ${carId} - Lap ${lapIdx + 1} - Space ${spaceId}`,
+                                line: { color: lineColor, width: 1 },
+                                fill: 'toself',
+                                fillcolor: color,
+                                showlegend: false,
+                                hoverinfo: 'text',
+                                text: `Car ${carId}<br>Lap ${lapIdx + 1}<br>Space ${spaceId}<br>Die Type: ${dieType !== null && dieType !== undefined ? dieType : 'N/A'}`,
+                                hovertemplate: '%{text}<extra></extra>',
+                                visible: false
+                            });
+                            lapIndices.push(currentTraceIdx);
+                            currentTraceIdx++;
+                        }
+                    }
+                    traceIndicesByCarLap[carId][lapKey] = lapIndices;
+
+                    // Create markers for the beginning of each event in this lap
+                    const markerX = [];
+                    const markerY = [];
+                    const markerText = [];
+                    const markerNumbers = [];
+
+                    // Get car color based on player
+                    const playerId = carToPlayer[carId];
+                    const playerName = playerId && player_label[playerId] ? player_label[playerId] : null;
+                    let carColor;
+                    if (playerName && playerColors[playerName]) {
+                        // Count cars for this player to determine primary/secondary
+                        let playerCarCount = 0;
+                        for (const cid of carIds) {
+                            if (cid === carId) break;
+                            const pid = carToPlayer[cid];
+                            const pname = pid && player_label[pid] ? player_label[pid] : null;
+                            if (pname === playerName) playerCarCount++;
+                        }
+                        carColor = playerCarCount % 2 === 0 ? playerColors[playerName].primary : playerColors[playerName].secondary;
+                    } else {
+                        // Fallback
+                        const carIndex = carIds.indexOf(carId);
+                        carColor = fallbackColors[carIndex % fallbackColors.length];
+                    }
+
+                    for (let eventIdx = 0; eventIdx < lapEvents.length; eventIdx++) {
+                        const event = lapEvents[eventIdx];
+                        const spaces = event.spaces || [];
+                        if (spaces.length > 0) {
+                            const firstSpace = String(spaces[0]);
+                            if (firstSpace in nogaroSpaces) {
+                                const spaceData = nogaroSpaces[firstSpace];
+                                const centerX = spaceData.scaled_center_x !== undefined ? spaceData.scaled_center_x : spaceData.center_x;
+                                const centerY = spaceData.scaled_center_y !== undefined ? spaceData.scaled_center_y : spaceData.center_y;
+                                markerX.push(centerX);
+                                markerY.push(centerY);
+                                const dieType = event.die_type !== null && event.die_type !== undefined ? event.die_type : 'N/A';
+                                markerText.push(`Event ${eventIdx + 1}<br>Space ${firstSpace}<br>Die Type: ${dieType}`);
+                                markerNumbers.push(String(eventIdx + 1));
+                            }
+                        }
+                    }
+
+                    if (markerX.length > 0) {
+                        // Create marker trace
+                        data.push({
+                            x: markerX,
+                            y: markerY,
+                            mode: 'markers+text',
+                            name: `Car ${carId} - Lap ${lapIdx + 1} - Event Starts`,
+                            marker: {
+                                size: 12,
+                                color: carColor,
+                                symbol: 'circle',
+                                line: { width: 1, color: 'white' }
+                            },
+                            text: markerNumbers,
+                            textposition: 'middle',
+                            textfont: {
+                                size: 8,
+                                color: 'white',
+                                family: 'Arial, sans-serif'
+                            },
+                            showlegend: false,
+                            hoverinfo: 'text',
+                            customdata: markerText,
+                            hovertemplate: '%{customdata}<extra></extra>',
+                            visible: false
+                        });
+                        markerTracesByCarLap[carId][lapKey] = [currentTraceIdx];
+                        currentTraceIdx++;
+                    } else {
+                        markerTracesByCarLap[carId][lapKey] = [];
+                    }
+                }
+
+                // Create animated car marker as HTML element (not Plotly trace)
+                // Get car color based on player
+                const playerId = carToPlayer[carId];
+                const playerName = playerId && player_label[playerId] ? player_label[playerId] : null;
+                let carColor;
+                if (playerName && playerColors[playerName]) {
+                    // Count cars for this player to determine primary/secondary
+                    let playerCarCount = 0;
+                    for (const cid of carIds) {
+                        if (cid === carId) break;
+                        const pid = carToPlayer[cid];
+                        const pname = pid && player_label[pid] ? player_label[pid] : null;
+                        if (pname === playerName) playerCarCount++;
+                    }
+                    carColor = playerCarCount % 2 === 0 ? playerColors[playerName].primary : playerColors[playerName].secondary;
+                } else {
+                    // Fallback
+                    const carIndex = carIds.indexOf(carId);
+                    carColor = fallbackColors[carIndex % fallbackColors.length];
+                }
+                
+                // Store marker element reference instead of trace index
+                animationState.carMarkerTraceIndices[carId] = null; // Not used for JS markers
+            }
+
+            // Create HTML buttons for each (car, lap) combination
+            const controlsContainer = document.getElementById('controls-container');
+            const buttonStates = {}; // Track which buttons are active: {carId: {lapIdx: true/false}}
+
+            for (const carId of carIds) {
+                const numLaps = carsLapsForUI[carId].length;
+                buttonStates[carId] = {};
+
+                // Create car row
+                const carRow = document.createElement('div');
+                carRow.className = 'car-row';
+
+                // Create car label with player name and car-specific color
+                const carLabel = document.createElement('div');
+                carLabel.className = 'car-label';
+                const playerId = carToPlayer[carId];
+                const playerName = playerId && player_label[playerId] ? player_label[playerId] : null;
+                
+                // Get car color based on player
+                let carColor;
+                if (playerName && playerColors[playerName]) {
+                    // Count cars for this player to determine primary/secondary
+                    let playerCarCount = 0;
+                    for (const cid of carIds) {
+                        if (cid === carId) break;
+                        const pid = carToPlayer[cid];
+                        const pname = pid && player_label[pid] ? player_label[pid] : null;
+                        if (pname === playerName) playerCarCount++;
+                    }
+                    carColor = playerCarCount % 2 === 0 ? playerColors[playerName].primary : playerColors[playerName].secondary;
+                } else {
+                    // Fallback
+                    const carIndex = carIds.indexOf(carId);
+                    carColor = fallbackColors[carIndex % fallbackColors.length];
+                }
+                
+                // Apply car color to label background
+                carLabel.style.backgroundColor = carColor;
+                
+                if (playerName) {
+                    carLabel.textContent = `Car ${carId} (${playerName}):`;
+                } else {
+                    carLabel.textContent = `Car ${carId}:`;
+                }
+                carRow.appendChild(carLabel);
+
+                // Create lap buttons container
+                const lapButtonsContainer = document.createElement('div');
+                lapButtonsContainer.className = 'lap-buttons';
+
+                // Add buttons for each lap for this car
+                for (let lapIdx = 0; lapIdx < numLaps; lapIdx++) {
+                    const lapKey = `lap_${lapIdx}`;
+                    if (lapKey in traceIndicesByCarLap[carId]) {
+                        let lapIndices = [...traceIndicesByCarLap[carId][lapKey]];
+                        // Include marker traces for this lap
+                        if (lapKey in markerTracesByCarLap[carId]) {
+                            lapIndices = lapIndices.concat(markerTracesByCarLap[carId][lapKey]);
+                        }
+
+                        // Create button
+                        const lapButton = document.createElement('button');
+                        lapButton.className = 'lap-button';
+                        lapButton.textContent = `Lap ${lapIdx + 1}`;
+                        lapButton.dataset.carId = carId;
+                        lapButton.dataset.lapIdx = lapIdx;
+                        buttonStates[carId][lapIdx] = false; // Initially hidden
+
+                        // Add click handler
+                        lapButton.addEventListener('click', function() {
+                            const carId = parseInt(this.dataset.carId);
+                            const lapIdx = parseInt(this.dataset.lapIdx);
+                            const isActive = buttonStates[carId][lapIdx];
+                            
+                            // Toggle state
+                            buttonStates[carId][lapIdx] = !isActive;
+                            
+                            // Update button appearance
+                            if (buttonStates[carId][lapIdx]) {
+                                this.classList.add('active');
+                            } else {
+                                this.classList.remove('active');
+                            }
+
+                            // Toggle visibility in Plotly
+                            const lapKey = `lap_${lapIdx}`;
+                            let lapIndices = [...traceIndicesByCarLap[carId][lapKey]];
+                            if (lapKey in markerTracesByCarLap[carId]) {
+                                lapIndices = lapIndices.concat(markerTracesByCarLap[carId][lapKey]);
+                            }
+
+                            const visibility = new Array(lapIndices.length).fill(buttonStates[carId][lapIdx]);
+                            Plotly.restyle('plot-container', { visible: visibility }, lapIndices);
+                        });
+
+                        lapButtonsContainer.appendChild(lapButton);
+                    }
+                }
+
+                carRow.appendChild(lapButtonsContainer);
+                controlsContainer.appendChild(carRow);
+            }
+
+            // Create layout
+            const layout = {
+                title: 'Nogaro Circuit - Select Car and Lap',
+                xaxis: {
+                    range: [0, imageWidth],
+                    scaleanchor: 'y',
+                    scaleratio: 1,
+                    showgrid: false,
+                    zeroline: false
+                },
+                yaxis: {
+                    range: [imageHeight, 0],
+                    showgrid: false,
+                    zeroline: false
+                },
+                width: 1200,
+                height: Math.floor(1200 * imageHeight / imageWidth),
+                plot_bgcolor: 'white',
+                images: [{
+                    source: imagePath,
+                    xref: 'x',
+                    yref: 'y',
+                    x: 0,
+                    y: 0,
+                    sizex: imageWidth,
+                    sizey: imageHeight,
+                    sizing: 'stretch',
+                    opacity: 1,
+                    layer: 'below'
+                }]
+            };
+
+            // Create the plot
+            Plotly.newPlot('plot-container', data, layout, { responsive: true });
+            animationState.plotContainer = 'plot-container'; // Store ID string for Plotly
+
+            // Create JavaScript-based animated markers
+            createCarMarkers(carIds, carToPlayer, player_label);
+            
+            // Create animation controls
+            createAnimationControls(carIds, carToPlayer);
+            
+            // Initialize animation (show cars at starting positions)
+            updateAnimationTime(0);
+        }
+
+        // Create JavaScript-based car markers
+        function createCarMarkers(carIds, carToPlayer, player_label) {
+            const plotContainer = document.getElementById('plot-container');
+            if (!plotContainer) return;
+            
+            for (const carId of carIds) {
+                const playerId = carToPlayer[carId];
+                const playerName = playerId && player_label[playerId] ? player_label[playerId] : null;
+                
+                // Create marker element
+                const marker = document.createElement('div');
+                marker.className = 'car-marker';
+                
+                // Add player-specific class for sprite positioning
+                if (playerName && (playerName === 'jdregister' || playerName === 'jxcr0w' || playerName === 'mikeggg')) {
+                    marker.classList.add(playerName);
+                } else {
+                    // Fallback: use first car (yellow/jdregister) for unknown players
+                    marker.classList.add('jdregister');
+                }
+                
+                marker.id = `car-marker-${carId}`;
+                marker.style.display = 'none'; // Hidden until animation starts
+                
+                plotContainer.appendChild(marker);
+                
+                // Store marker element reference
+                animationState.carMarkerTraceIndices[carId] = marker;
+            }
+        }
+
+        // Create animation control UI
+        function createAnimationControls(carIds, carToPlayer) {
+            const controlsContainer = document.getElementById('animation-controls');
+            
+            // Play/Pause button
+            const playPauseBtn = document.createElement('button');
+            playPauseBtn.className = 'animation-button';
+            playPauseBtn.id = 'play-pause-btn';
+            playPauseBtn.textContent = 'Play';
+            playPauseBtn.addEventListener('click', toggleAnimation);
+            controlsContainer.appendChild(playPauseBtn);
+
+            // Restart button
+            const restartBtn = document.createElement('button');
+            restartBtn.className = 'animation-button';
+            restartBtn.textContent = 'Restart';
+            restartBtn.addEventListener('click', () => {
+                stopAnimation();
+                animationState.currentTime = 0;
+                updateAnimationTime(0);
+            });
+            controlsContainer.appendChild(restartBtn);
+
+            // Speed control
+            const speedControl = document.createElement('div');
+            speedControl.className = 'speed-control';
+            const speedLabel = document.createElement('label');
+            speedLabel.textContent = 'Speed:';
+            const speedInput = document.createElement('input');
+            speedInput.type = 'range';
+            speedInput.min = '0.5';
+            speedInput.max = '5';
+            speedInput.step = '0.5';
+            speedInput.value = '1';
+            speedInput.addEventListener('input', (e) => {
+                animationState.speed = parseFloat(e.target.value);
+            });
+            const speedValue = document.createElement('span');
+            speedValue.textContent = '1x';
+            speedInput.addEventListener('input', (e) => {
+                speedValue.textContent = e.target.value + 'x';
+            });
+            speedControl.appendChild(speedLabel);
+            speedControl.appendChild(speedInput);
+            speedControl.appendChild(speedValue);
+            controlsContainer.appendChild(speedControl);
+        }
+
+        // Toggle animation play/pause
+        function toggleAnimation() {
+            if (animationState.isPlaying) {
+                stopAnimation();
+            } else {
+                startAnimation();
+            }
+        }
+
+        // Start animation
+        function startAnimation() {
+            animationState.isPlaying = true;
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            if (playPauseBtn) {
+                playPauseBtn.textContent = 'Pause';
+            }
+            
+            const startTime = performance.now() - (animationState.currentTime / animationState.speed);
+            
+            function animate(currentTime) {
+                if (!animationState.isPlaying) return;
+                
+                // Update animation time based on elapsed time
+                const elapsed = (currentTime - startTime) * animationState.speed;
+                animationState.currentTime = elapsed;
+                
+                if (animationState.currentTime >= animationState.maxTime) {
+                    animationState.currentTime = animationState.maxTime;
+                    stopAnimation();
+                }
+                
+                // Update positions continuously
+                updateAnimationTime(animationState.currentTime);
+                
+                // Continue animation loop
+                animationState.animationInterval = requestAnimationFrame(animate);
+            }
+            
+            animationState.animationInterval = requestAnimationFrame(animate);
+        }
+
+        // Stop animation
+        function stopAnimation() {
+            animationState.isPlaying = false;
+            if (animationState.animationInterval !== null) {
+                cancelAnimationFrame(animationState.animationInterval);
+                animationState.animationInterval = null;
+            }
+            
+            // Kill all GSAP tweens
+            if (animationState.carTweens) {
+                for (const carId in animationState.carTweens) {
+                    gsap.killTweensOf(animationState.carTweens[carId]);
+                }
+            }
+            
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            if (playPauseBtn) {
+                playPauseBtn.textContent = 'Play';
+            }
+        }
+
+        // Catmull-Rom spline interpolation for smooth, continuous motion
+        // This ensures C1 continuity (smooth velocity) between segments
+        function catmullRomInterpolate(p0, p1, p2, p3, t, tension = 0.5) {
+            const t2 = t * t;
+            const t3 = t2 * t;
+            
+            // Catmull-Rom spline formula
+            const x = 0.5 * (
+                (2 * p1.x) +
+                (-p0.x + p2.x) * t +
+                (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+            );
+            
+            const y = 0.5 * (
+                (2 * p1.y) +
+                (-p0.y + p2.y) * t +
+                (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+            );
+            
+            return { x, y };
+        }
+
+        // Create D3 line interpolator for smooth path following
+        function createD3Interpolator(trajectory) {
+            if (trajectory.length === 0) return null;
+            
+            // Convert trajectory to array of [x, y] pairs for D3
+            const points = trajectory.map(p => [p.x, p.y]);
+            
+            // Create a D3 line generator with basis interpolation for very smooth curves
+            // curveBasis provides C2 continuity (smooth acceleration)
+            const line = d3.line()
+                .x(d => d[0])
+                .y(d => d[1])
+                .curve(d3.curveBasis); // Very smooth basis spline
+            
+            // Create a path string
+            const pathString = line(points);
+            
+            if (!pathString || pathString === '') {
+                console.warn('Empty path string for trajectory');
+                return null;
+            }
+            
+            // Create a temporary SVG element to measure path length
+            // This is needed for getPointAtLength to work properly
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.style.position = 'absolute';
+            svg.style.visibility = 'hidden';
+            svg.style.width = '10000px'; // Large enough to contain path
+            svg.style.height = '10000px';
+            svg.setAttribute('viewBox', '0 0 10000 10000');
+            document.body.appendChild(svg);
+            
+            // Create a path element to measure length
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", pathString);
+            svg.appendChild(path);
+            
+            // Force layout calculation
+            const pathLength = path.getTotalLength();
+            
+            if (pathLength === 0 || isNaN(pathLength)) {
+                console.warn('Invalid path length:', pathLength);
+                document.body.removeChild(svg);
+                return null;
+            }
+            
+            return {
+                path: path,
+                svg: svg,
+                pathLength: pathLength,
+                getPointAtLength: (length) => {
+                    try {
+                        const clampedLength = Math.max(0, Math.min(length, pathLength));
+                        const point = path.getPointAtLength(clampedLength);
+                        return { x: point.x, y: point.y };
+                    } catch (e) {
+                        console.error('Error getting point at length:', e);
+                        return { x: 0, y: 0 };
+                    }
+                }
+            };
+        }
+
+        // Update animation using GSAP tweening for smooth continuous motion
+        // Uses pure JavaScript elements instead of Plotly
+        // Cars are synchronized by event index - all reach Nth event at same time
+        function updateAnimationTime(currentTime) {
+            const plotContainer = document.getElementById('plot-container');
+            if (!plotContainer) return;
+            
+            // Use Plotly's coordinate conversion to get accurate pixel positions
+            const plotDiv = plotContainer.querySelector('.plotly');
+            if (!plotDiv) return;
+            
+            // Get Plotly's axis ranges
+            const imageWidth = animationState.imageWidth;
+            const imageHeight = animationState.imageHeight;
+            
+            // Calculate which event we're in based on time
+            // Each event takes timePerEvent milliseconds
+            const targetEventIndex = Math.floor(currentTime / animationState.timePerEvent);
+            const progressInEvent = (currentTime % animationState.timePerEvent) / animationState.timePerEvent; // 0 to 1 within current event
+            
+            for (const [carId, trajectory] of Object.entries(animationState.carTrajectories)) {
+                const marker = animationState.carMarkerTraceIndices[carId];
+                
+                if (!marker || trajectory.length === 0) continue;
+                
+                // Find points for the target event
+                let eventStartIdx = -1;
+                let eventEndIdx = -1;
+                
+                for (let i = 0; i < trajectory.length; i++) {
+                    if (trajectory[i].eventIndex === targetEventIndex) {
+                        if (eventStartIdx === -1) {
+                            eventStartIdx = i;
+                        }
+                        eventEndIdx = i;
+                    } else if (trajectory[i].eventIndex > targetEventIndex) {
+                        break;
+                    }
+                }
+                
+                let point = null;
+                
+                if (eventStartIdx === -1) {
+                    // Haven't reached this event yet
+                    if (targetEventIndex < 0) {
+                        // Before start - use first point
+                        point = trajectory[0];
+                    } else {
+                        // Find last point of previous event
+                        for (let i = trajectory.length - 1; i >= 0; i--) {
+                            if (trajectory[i].eventIndex < targetEventIndex) {
+                                point = trajectory[i];
+                                break;
+                            }
+                        }
+                        if (!point) point = trajectory[0];
+                    }
+                } else if (eventEndIdx === -1) {
+                    // Only one point in event
+                    point = trajectory[eventStartIdx];
+                } else {
+                    // Interpolate within the event
+                    const numPointsInEvent = eventEndIdx - eventStartIdx + 1;
+                    const targetPointIndex = eventStartIdx + Math.floor(progressInEvent * (numPointsInEvent - 1));
+                    const clampedIndex = Math.min(Math.max(targetPointIndex, eventStartIdx), eventEndIdx);
+                    point = trajectory[clampedIndex];
+                    
+                    // If not at exact point, interpolate between adjacent points
+                    if (targetPointIndex !== clampedIndex && clampedIndex < eventEndIdx) {
+                        const p0 = trajectory[clampedIndex];
+                        const p1 = trajectory[clampedIndex + 1];
+                        const t = (targetPointIndex - clampedIndex);
+                        
+                        // Interpolate bearing (handle angle wrapping)
+                        let bearing = p0.bearing;
+                        if (p0.bearing !== undefined && p1.bearing !== undefined) {
+                            // Interpolate angles, handling 360° wrap
+                            let b0 = p0.bearing;
+                            let b1 = p1.bearing;
+                            let diff = b1 - b0;
+                            if (Math.abs(diff) > 180) {
+                                if (diff > 0) diff -= 360;
+                                else diff += 360;
+                            }
+                            bearing = (b0 + diff * t) % 360;
+                            if (bearing < 0) bearing += 360;
+                        }
+                        
+                        point = {
+                            x: p0.x + (p1.x - p0.x) * t,
+                            y: p0.y + (p1.y - p0.y) * t,
+                            eventIndex: p0.eventIndex,
+                            bearing: bearing
+                        };
+                    }
+                }
+                
+                // If we've passed all events, use last point
+                if (!point) {
+                    point = trajectory[trajectory.length - 1];
+                }
+                
+                if (point && !isNaN(point.x) && !isNaN(point.y)) {
+                    // Use Plotly's internal coordinate conversion
+                    let pixelX, pixelY;
+                    
+                    try {
+                        const gd = plotContainer;
+                        if (gd && gd._fullLayout) {
+                            const fullLayout = gd._fullLayout;
+                            const xaxis = fullLayout.xaxis;
+                            const yaxis = fullLayout.yaxis;
+                            
+                            // Convert data coordinates to pixel coordinates
+                            const xRange = xaxis._rl[1] - xaxis._rl[0];
+                            const yRange = yaxis._rl[1] - yaxis._rl[0];
+                            
+                            pixelX = xaxis._offset + xaxis._length * ((point.x - xaxis._rl[0]) / xRange);
+                            // Y-axis is inverted: imageHeight at top (0), 0 at bottom (imageHeight)
+                            pixelY = yaxis._offset + yaxis._length * (1 - (point.y - yaxis._rl[0]) / yRange);
+                        } else {
+                            throw new Error('Plotly layout not available');
+                        }
+                    } catch (e) {
+                        // Fallback: manual calculation
+                        const plotRect = plotDiv.getBoundingClientRect();
+                        const containerRect = plotContainer.getBoundingClientRect();
+                        const offsetX = plotRect.left - containerRect.left;
+                        const offsetY = plotRect.top - containerRect.top;
+                        const plotWidth = plotRect.width;
+                        const plotHeight = plotRect.height;
+                        
+                        pixelX = (point.x / imageWidth) * plotWidth + offsetX;
+                        pixelY = ((imageHeight - point.y) / imageHeight) * plotHeight + offsetY;
+                    }
+                    
+                    // Show marker if animation is playing
+                    if (animationState.isPlaying) {
+                        marker.style.display = 'block';
+                    }
+                    
+                    // Calculate rotation based on bearing
+                    // Bearing is in degrees (0-360), where 0 is typically north/up
+                    // CSS rotate uses degrees, and we may need to adjust based on car image orientation
+                    let rotation = 0;
+                    if (point.bearing !== undefined && point.bearing !== null) {
+                        // Bearing is typically measured clockwise from north (0°)
+                        // CSS rotate is clockwise from 0° (pointing right/east)
+                        // So we need to adjust: bearing 0° (north) = -90° in CSS, bearing 90° (east) = 0° in CSS
+                        // Add 90° clockwise more: subtract 90 more degrees
+                        rotation = point.bearing - 180;
+                    }
+                    
+                    // Use GSAP to smoothly animate the marker position and rotation
+                    // Need to combine translate(-50%, -50%), scale(0.05), and rotation in GSAP
+                    // GSAP will overwrite the CSS transform, so we need to include everything
+                    gsap.to(marker, {
+                        left: pixelX + 'px',
+                        top: pixelY + 'px',
+                        xPercent: -50, // Equivalent to translateX(-50%)
+                        yPercent: -50, // Equivalent to translateY(-50%)
+                        scale: 0.05,
+                        rotation: rotation,
+                        transformOrigin: '50% 50%',
+                        duration: 0.016,
+                        ease: "none",
+                        overwrite: true
+                    });
+                }
+            }
+        }
+
+        // Initialize the visualization when page loads
+        createVisualization().catch(err => {
+            console.error('Error creating visualization:', err);
+            document.getElementById('plot-container').innerHTML = 
+                '<p style="color: red; padding: 20px;">Error loading visualization. Please check that all JSON files are available.</p>';
+        });
+    </script>
+</body>
+</html>
+

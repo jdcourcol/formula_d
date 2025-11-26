@@ -1227,14 +1227,14 @@
                     
                     // Calculate rotation based on bearing
                     // Bearing is in degrees (0-360), where 0 is typically north/up
-                    // CSS rotate uses degrees, and we may need to adjust based on car image orientation
+                    // CSS rotate is clockwise from 0° (pointing right/east)
                     let rotation = 0;
                     if (point.bearing !== undefined && point.bearing !== null) {
                         // Bearing is typically measured clockwise from north (0°)
                         // CSS rotate is clockwise from 0° (pointing right/east)
                         // So we need to adjust: bearing 0° (north) = -90° in CSS, bearing 90° (east) = 0° in CSS
                         // Add 90° clockwise more: subtract 90 more degrees
-                        rotation = point.bearing - 180;
+                        rotation = point.bearing ;
                     }
                     
                     // Use GSAP to smoothly animate the marker position and rotation

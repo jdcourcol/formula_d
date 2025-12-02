@@ -670,7 +670,9 @@
             plotContainer: null, // Plotly plot container reference
             imageWidth: 0, // Image width for coordinate conversion
             imageHeight: 0, // Image height for coordinate conversion
-            carMaxEventIndex: {} // Maximum event index for each car
+            carMaxEventIndex: {}, // Maximum event index for each car
+            isStepping: false, // Flag to track if step animation is in progress
+            stepTween: null // GSAP tween for step animation
         };
 
         // Create the visualization
@@ -1103,6 +1105,7 @@
                 // Use setTimeout to ensure Plotly layout is fully ready
                 setTimeout(() => {
                     updateAnimationTime(0);
+                    updateStepButtons();
                 }, 100);
             });
         }
@@ -1171,8 +1174,25 @@
                 stopAnimation();
                 animationState.currentTime = 0;
                 updateAnimationTime(0);
+                updateStepButtons();
             });
             controlsContainer.appendChild(restartBtn);
+
+            // Step backward button
+            const stepBackBtn = document.createElement('button');
+            stepBackBtn.className = 'animation-button';
+            stepBackBtn.id = 'step-back-btn';
+            stepBackBtn.textContent = '⏮ Step Back';
+            stepBackBtn.addEventListener('click', stepBackward);
+            controlsContainer.appendChild(stepBackBtn);
+
+            // Step forward button
+            const stepForwardBtn = document.createElement('button');
+            stepForwardBtn.className = 'animation-button';
+            stepForwardBtn.id = 'step-forward-btn';
+            stepForwardBtn.textContent = 'Step Forward ⏭';
+            stepForwardBtn.addEventListener('click', stepForward);
+            controlsContainer.appendChild(stepForwardBtn);
 
             // Speed control
             const speedControl = document.createElement('div');
@@ -1228,6 +1248,7 @@
                 if (animationState.currentTime >= animationState.maxTime) {
                     animationState.currentTime = animationState.maxTime;
                     stopAnimation();
+                    updateStepButtons();
                 }
                 
                 // Update positions continuously
@@ -1255,9 +1276,110 @@
                 }
             }
             
+            // Kill step animation if running
+            if (animationState.stepTween) {
+                animationState.stepTween.kill();
+                animationState.stepTween = null;
+                animationState.isStepping = false;
+            }
+            
             const playPauseBtn = document.getElementById('play-pause-btn');
             if (playPauseBtn) {
                 playPauseBtn.textContent = 'Play';
+            }
+            
+            updateStepButtons();
+        }
+
+        // Step forward by one event (with animation)
+        function stepForward() {
+            if (animationState.isStepping) return; // Prevent multiple steps at once
+            
+            stopAnimation();
+            const startTime = animationState.currentTime;
+            const targetTime = Math.min(
+                animationState.currentTime + animationState.timePerEvent,
+                animationState.maxTime
+            );
+            
+            if (startTime >= targetTime) {
+                updateStepButtons();
+                return; // Already at max
+            }
+            
+            animateStep(startTime, targetTime);
+        }
+
+        // Step backward by one event (with animation)
+        function stepBackward() {
+            if (animationState.isStepping) return; // Prevent multiple steps at once
+            
+            stopAnimation();
+            const startTime = animationState.currentTime;
+            const targetTime = Math.max(
+                animationState.currentTime - animationState.timePerEvent,
+                0
+            );
+            
+            if (startTime <= targetTime) {
+                updateStepButtons();
+                return; // Already at start
+            }
+            
+            animateStep(startTime, targetTime);
+        }
+
+        // Animate step transition smoothly
+        function animateStep(startTime, targetTime) {
+            animationState.isStepping = true;
+            
+            // Disable step buttons during animation
+            const stepBackBtn = document.getElementById('step-back-btn');
+            const stepForwardBtn = document.getElementById('step-forward-btn');
+            if (stepBackBtn) stepBackBtn.disabled = true;
+            if (stepForwardBtn) stepForwardBtn.disabled = true;
+            
+            // Duration for step animation (0.5 seconds)
+            const stepDuration = 0.5;
+            
+            // Create a temporary object for GSAP to animate
+            const stepObj = { time: startTime };
+            
+            // Kill any existing step tween
+            if (animationState.stepTween) {
+                animationState.stepTween.kill();
+            }
+            
+            // Animate using GSAP
+            animationState.stepTween = gsap.to(stepObj, {
+                time: targetTime,
+                duration: stepDuration,
+                ease: "power2.inOut",
+                onUpdate: () => {
+                    animationState.currentTime = stepObj.time;
+                    updateAnimationTime(stepObj.time);
+                },
+                onComplete: () => {
+                    animationState.currentTime = targetTime;
+                    updateAnimationTime(targetTime);
+                    animationState.isStepping = false;
+                    animationState.stepTween = null;
+                    updateStepButtons();
+                }
+            });
+        }
+
+        // Update step button states (enable/disable based on current position)
+        function updateStepButtons() {
+            const stepBackBtn = document.getElementById('step-back-btn');
+            const stepForwardBtn = document.getElementById('step-forward-btn');
+            
+            if (stepBackBtn) {
+                stepBackBtn.disabled = animationState.currentTime <= 0;
+            }
+            
+            if (stepForwardBtn) {
+                stepForwardBtn.disabled = animationState.currentTime >= animationState.maxTime;
             }
         }
 
@@ -1519,21 +1641,38 @@
                         rotation = point.bearing ;
                     }
                     
-                    // Use GSAP to smoothly animate the marker position and rotation
-                    // Need to combine translate(-50%, -50%), scale(0.05), and rotation in GSAP
-                    // GSAP will overwrite the CSS transform, so we need to include everything
-                    gsap.to(marker, {
-                        left: pixelX + 'px',
-                        top: pixelY + 'px',
-                        xPercent: -50, // Equivalent to translateX(-50%)
-                        yPercent: -50, // Equivalent to translateY(-50%)
-                        scale: 0.05,
-                        rotation: rotation,
-                        transformOrigin: '50% 50%',
-                        duration: 0.016,
-                        ease: "none",
-                        overwrite: true
-                    });
+                    // During step animation, use immediate updates without creating tweens
+                    // The smoothness comes from the step animation tween updating time smoothly
+                    if (animationState.isStepping) {
+                        // Use gsap.set for immediate position updates during stepping
+                        // This avoids creating many conflicting tweens
+                        gsap.set(marker, {
+                            left: pixelX + 'px',
+                            top: pixelY + 'px',
+                            xPercent: -50,
+                            yPercent: -50,
+                            scale: 0.05,
+                            rotation: rotation,
+                            transformOrigin: '50% 50%',
+                            immediateRender: true
+                        });
+                    } else {
+                        // Use GSAP to smoothly animate the marker position and rotation during normal playback
+                        // Need to combine translate(-50%, -50%), scale(0.05), and rotation in GSAP
+                        // GSAP will overwrite the CSS transform, so we need to include everything
+                        gsap.to(marker, {
+                            left: pixelX + 'px',
+                            top: pixelY + 'px',
+                            xPercent: -50, // Equivalent to translateX(-50%)
+                            yPercent: -50, // Equivalent to translateY(-50%)
+                            scale: 0.05,
+                            rotation: rotation,
+                            transformOrigin: '50% 50%',
+                            duration: 0.016,
+                            ease: "none",
+                            overwrite: true
+                        });
+                    }
                 }
             }
         }

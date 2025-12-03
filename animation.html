@@ -173,6 +173,54 @@
         .speed-control input {
             width: 60px;
         }
+        .keyboard-help {
+            font-size: 10px;
+            color: rgba(100, 100, 100, 0.8);
+            margin-left: auto;
+            padding: 5px 10px;
+            background-color: rgba(240, 240, 240, 0.8);
+            border: 1px solid rgba(200, 200, 200, 0.5);
+            border-radius: 3px;
+            cursor: help;
+            position: relative;
+        }
+        .keyboard-help:hover {
+            background-color: rgba(250, 250, 250, 0.9);
+        }
+        .keyboard-shortcuts {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 5px;
+            padding: 8px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            min-width: 200px;
+            font-size: 11px;
+        }
+        .keyboard-help:hover .keyboard-shortcuts {
+            display: block;
+        }
+        .keyboard-shortcuts table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .keyboard-shortcuts td {
+            padding: 3px 5px;
+        }
+        .keyboard-shortcuts td:first-child {
+            font-weight: bold;
+            text-align: right;
+            padding-right: 10px;
+            color: rgba(0, 0, 0, 0.7);
+        }
+        .keyboard-shortcuts td:last-child {
+            color: rgba(0, 0, 0, 0.6);
+        }
     </style>
 </head>
 <body>
@@ -1101,6 +1149,9 @@
                 // Create animation controls
                 createAnimationControls(carIds, carToPlayer);
                 
+                // Set up keyboard shortcuts
+                setupKeyboardShortcuts();
+                
                 // Initialize animation (show cars at starting positions)
                 // Use setTimeout to ensure Plotly layout is fully ready
                 setTimeout(() => {
@@ -1217,6 +1268,109 @@
             speedControl.appendChild(speedInput);
             speedControl.appendChild(speedValue);
             controlsContainer.appendChild(speedControl);
+
+            // Keyboard shortcuts help
+            const keyboardHelp = document.createElement('div');
+            keyboardHelp.className = 'keyboard-help';
+            keyboardHelp.textContent = '⌨️ Keyboard Shortcuts';
+            const shortcuts = document.createElement('div');
+            shortcuts.className = 'keyboard-shortcuts';
+            shortcuts.innerHTML = `
+                <table>
+                    <tr><td>Space</td><td>Play/Pause</td></tr>
+                    <tr><td>←</td><td>Step Backward</td></tr>
+                    <tr><td>→</td><td>Step Forward</td></tr>
+                    <tr><td>Home</td><td>Restart</td></tr>
+                    <tr><td>+ / -</td><td>Speed Up/Down</td></tr>
+                    <tr><td>Esc</td><td>Stop</td></tr>
+                </table>
+            `;
+            keyboardHelp.appendChild(shortcuts);
+            controlsContainer.appendChild(keyboardHelp);
+        }
+
+        // Set up keyboard shortcuts for animation controls
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                // Ignore keyboard shortcuts when user is typing in an input field
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+                    return;
+                }
+
+                switch(e.key) {
+                    case ' ': // Spacebar - Play/Pause
+                        e.preventDefault();
+                        toggleAnimation();
+                        break;
+                    
+                    case 'ArrowLeft': // Left Arrow - Step Backward
+                        e.preventDefault();
+                        if (!animationState.isStepping) {
+                            stepBackward();
+                        }
+                        break;
+                    
+                    case 'ArrowRight': // Right Arrow - Step Forward
+                        e.preventDefault();
+                        if (!animationState.isStepping) {
+                            stepForward();
+                        }
+                        break;
+                    
+                    case 'Home': // Home - Restart
+                        e.preventDefault();
+                        stopAnimation();
+                        animationState.currentTime = 0;
+                        updateAnimationTime(0);
+                        updateStepButtons();
+                        break;
+                    
+                    case '+':
+                    case '=': // Plus/Equals - Increase Speed
+                        e.preventDefault();
+                        const speedInput = document.querySelector('.speed-control input[type="range"]');
+                        if (speedInput) {
+                            const currentSpeed = parseFloat(speedInput.value);
+                            const maxSpeed = parseFloat(speedInput.max);
+                            const step = parseFloat(speedInput.step) || 0.5;
+                            const newSpeed = Math.min(currentSpeed + step, maxSpeed);
+                            speedInput.value = newSpeed;
+                            animationState.speed = newSpeed;
+                            const speedValue = speedInput.nextElementSibling;
+                            if (speedValue) {
+                                speedValue.textContent = newSpeed + 'x';
+                            }
+                            // Trigger input event to update display
+                            speedInput.dispatchEvent(new Event('input'));
+                        }
+                        break;
+                    
+                    case '-':
+                    case '_': // Minus/Underscore - Decrease Speed
+                        e.preventDefault();
+                        const speedInputDec = document.querySelector('.speed-control input[type="range"]');
+                        if (speedInputDec) {
+                            const currentSpeed = parseFloat(speedInputDec.value);
+                            const minSpeed = parseFloat(speedInputDec.min);
+                            const step = parseFloat(speedInputDec.step) || 0.5;
+                            const newSpeed = Math.max(currentSpeed - step, minSpeed);
+                            speedInputDec.value = newSpeed;
+                            animationState.speed = newSpeed;
+                            const speedValue = speedInputDec.nextElementSibling;
+                            if (speedValue) {
+                                speedValue.textContent = newSpeed + 'x';
+                            }
+                            // Trigger input event to update display
+                            speedInputDec.dispatchEvent(new Event('input'));
+                        }
+                        break;
+                    
+                    case 'Escape': // Escape - Stop animation
+                        e.preventDefault();
+                        stopAnimation();
+                        break;
+                }
+            });
         }
 
         // Toggle animation play/pause

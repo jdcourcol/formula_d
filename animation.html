@@ -731,39 +731,17 @@
             };
         }
 
-        // Extract per-event rankings from logs
-        // Uses FD_NOTIFICATION_CARMOVEMENTCOMPLETED which contains a ranks array after each move
-        function extractEventRanks(events, logs) {
-            const logEntries = logs.data && logs.data.logs ? logs.data.logs : [];
-            
-            // Collect all ranks updates keyed by car_id (per-car, in order)
-            const carRankUpdates = {};
-            for (const entry of logEntries) {
-                for (const d of (entry.data || [])) {
-                    if (d.type === 'FD_NOTIFICATION_CARMOVEMENTCOMPLETED' && d.args && d.args.ranks) {
-                        const cid = d.args.car_id;
-                        if (!carRankUpdates[cid]) carRankUpdates[cid] = [];
-                        carRankUpdates[cid].push(d.args.ranks);
-                    }
-                }
-            }
-
-            // For each event in events.json, consume the next rank update for that car
-            const carNextIdx = {};
+        // Extract per-event rankings from update_rankings events embedded in events.json
+        function extractEventRanks(events) {
             let lastKnownRanks = null;
             const eventRanks = [];
             for (const evt of events) {
-                const cid = evt.car_id;
-                const updates = carRankUpdates[cid];
-                const idx = carNextIdx[cid] || 0;
-                if (updates && idx < updates.length) {
-                    lastKnownRanks = updates[idx];
-                    carNextIdx[cid] = idx + 1;
+                if (evt.type === 'update_rankings') {
+                    lastKnownRanks = evt.ranks;
                 }
-                // Use the latest known ranking (even if this car had no new update)
-                eventRanks.push(lastKnownRanks || []);
+                eventRanks.push(lastKnownRanks ? [...lastKnownRanks] : []);
             }
-            console.log(`Extracted ${eventRanks.length} event ranks`);
+            console.log(`Extracted ${eventRanks.length} event ranks (${eventRanks.filter(r => r.length > 0).length} with data)`);
             return eventRanks;
         }
 
@@ -773,9 +751,8 @@
             
             const circuitBasePath = `assets/circuits_data/${circuit}`;
             const eventsPath = `games/${table}/events.json`;
-            const logsPath = `logs/logs_${table}.json`;
             
-            const [nogaro, events, distances, logs] = await Promise.all([
+            const [nogaro, events, distances] = await Promise.all([
                 fetch(`${circuitBasePath}/circuit.json`).then(r => {
                     if (!r.ok) throw new Error(`Failed to load circuit.json: ${r.status}`);
                     return r.json();
@@ -787,18 +764,11 @@
                 fetch(`${circuitBasePath}/circuit_graph_colored_distances.json`).then(r => {
                     if (!r.ok) throw new Error(`Failed to load distances.json: ${r.status}`);
                     return r.json();
-                }),
-                fetch(logsPath).then(r => {
-                    if (!r.ok) {
-                        console.warn(`Logs file not found: ${logsPath}, rankings will be estimated`);
-                        return null;
-                    }
-                    return r.json();
-                }).catch(() => null)
+                })
             ]);
             
-            // Extract per-event rankings from logs
-            const eventRanks = logs ? extractEventRanks(events, logs) : null;
+            // Extract per-event rankings from update_rankings events in events.json
+            const eventRanks = extractEventRanks(events);
             
             // Always generate carsLapsForUI from events
             console.log('Generating carsLapsForUI from events...');
@@ -849,7 +819,7 @@
             carToPlayer: {}, // Map car_id -> player_id
             carIds: [], // All car IDs
             carEventSnapshots: {}, // Pre-computed per-event position snapshots for ranking
-            eventRanks: null // Per-event rankings from game logs [eventIdx] -> [car_id, ...]
+            eventRanks: null // Per-event rankings from events.json [eventIdx] -> [car_id, ...]
         };
 
         // Create the visualization
@@ -964,6 +934,7 @@
                 const flatEventsByCar = {};
                 for (let flatIdx = 0; flatIdx < events.length; flatIdx++) {
                     const carId = events[flatIdx].car_id;
+                    if (!carId) continue; // Skip non-car events (e.g. update_rankings)
                     if (!flatEventsByCar[carId]) flatEventsByCar[carId] = [];
                     flatEventsByCar[carId].push(flatIdx);
                 }

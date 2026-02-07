@@ -51,10 +51,89 @@
             background-color: rgba(200, 200, 255, 0.9);
             border-color: rgba(0, 0, 200, 0.4);
         }
+        #main-container {
+            display: flex;
+            gap: 15px;
+            align-items: flex-start;
+        }
         #plot-container {
-            width: 100%;
+            flex: 1;
             height: calc(100vh - 250px);
             position: relative;
+        }
+        #scoreboard {
+            width: 220px;
+            flex-shrink: 0;
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-size: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        #scoreboard h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            text-align: center;
+            color: #e0e0e0;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+            padding-bottom: 8px;
+        }
+        .scoreboard-event {
+            text-align: center;
+            font-size: 10px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 8px;
+        }
+        #scoreboard-players {
+            position: relative;
+        }
+        .scoreboard-player-block {
+            position: absolute;
+            left: 0;
+            right: 0;
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .scoreboard-player {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
+            border-radius: 5px;
+            background: rgba(255,255,255,0.06);
+        }
+        .scoreboard-rank {
+            font-weight: bold;
+            font-size: 14px;
+            width: 22px;
+            text-align: center;
+            transition: color 0.3s ease;
+        }
+        .scoreboard-rank.rank-1 { color: #ffd700; }
+        .scoreboard-rank.rank-2 { color: #c0c0c0; }
+        .scoreboard-rank.rank-3 { color: #cd7f32; }
+        .scoreboard-rank.rank-other { color: rgba(255,255,255,0.5); }
+        .scoreboard-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin: 0 8px;
+            flex-shrink: 0;
+        }
+        .scoreboard-name {
+            flex: 1;
+            font-weight: 600;
+        }
+        .scoreboard-points {
+            font-weight: bold;
+            font-size: 13px;
+            color: #4fc3f7;
+            transition: color 0.3s ease;
+        }
+        .scoreboard-cars {
+            font-size: 9px;
+            color: rgba(255,255,255,0.4);
+            padding-left: 40px;
+            margin-top: 2px;
         }
         .car-marker {
             position: absolute;
@@ -194,7 +273,14 @@
 <body>
     <div id="animation-controls" class="animation-controls"></div>
     <div id="controls-container"></div>
-    <div id="plot-container"></div>
+    <div id="main-container">
+        <div id="plot-container"></div>
+        <div id="scoreboard">
+            <h3>Standings</h3>
+            <div class="scoreboard-event" id="scoreboard-event">Event 0</div>
+            <div id="scoreboard-players"></div>
+        </div>
+    </div>
 
     <script>
         // Color palette for different die_types
@@ -710,7 +796,10 @@
             stepTween: null, // GSAP tween for step animation
             carCrashTime: {}, // Time when each car's crash was first detected
             crashExplosionDuration: 2000, // How long to show the explosion (ms)
-            carFinished: {} // Track which cars crossed the finish line (no explosion for these)
+            carFinished: {}, // Track which cars crossed the finish line (no explosion for these)
+            distances: {}, // Space distances from finish line
+            carToPlayer: {}, // Map car_id -> player_id
+            carIds: [] // All car IDs
         };
 
         // Create the visualization
@@ -736,6 +825,11 @@
             const carIds = Object.keys(carsLapsForUI).map(id => parseInt(id));
             console.log('Car IDs from carsLapsForUI:', carIds);
             console.log('carsLapsForAnimation keys:', Object.keys(carsLapsForAnimation || {}));
+
+            // Store data needed for scoreboard
+            animationState.distances = distances;
+            animationState.carToPlayer = carToPlayer;
+            animationState.carIds = carIds;
 
             // Build trajectories for all cars using events without lap splitting (for animation)
             animationState.carTrajectories = {};
@@ -775,7 +869,6 @@
                     const lastPoint = trajectory[trajectory.length - 1];
                     const lastSpaceId = lastPoint.spaceId;
                     const lastDist = lastSpaceId ? distances[String(lastSpaceId)] : undefined;
-                    // If last space distance <= 5, consider the car finished the race
                     animationState.carFinished[carId] = (lastDist !== undefined && lastDist <= 5);
                 }
             }
@@ -784,6 +877,22 @@
             // All cars will reach their Nth event at the same time
             animationState.maxTime = maxEventCount * animationState.timePerEvent;
             animationState.globalMaxEventIndex = maxEventCount - 1; // Store for crash detection
+            
+            // Mark cars that ended in the last round as finished (not crashed).
+            // A "round" is one turn cycle where each active car plays once.
+            // Cars whose last event is within one round of the global max simply
+            // had nothing left to do — they didn't crash.
+            const numCars = carIds.length;
+            for (const carId of carIds) {
+                const maxEvt = animationState.carMaxEventIndex[carId] || -1;
+                if (!animationState.carFinished[carId] && maxEvt >= 0) {
+                    // If this car's last event is within numCars of the global max,
+                    // it's in the last round — the game ended, it didn't crash.
+                    if ((maxEventCount - 1) - maxEvt <= numCars) {
+                        animationState.carFinished[carId] = true;
+                    }
+                }
+            }
 
             // Create figure data
             const data = [];
@@ -1224,6 +1333,8 @@
                 stopAnimation();
                 animationState.currentTime = 0;
                 animationState.carCrashTime = {}; // Reset crash state
+                lastScoreboardEvent = -1; // Reset scoreboard throttle
+                scoreboardInitialized = false; // Reset scoreboard elements
                 updateAnimationTime(0);
                 updateStepButtons();
             });
@@ -1322,6 +1433,8 @@
                         stopAnimation();
                         animationState.currentTime = 0;
                         animationState.carCrashTime = {}; // Reset crash state
+                        lastScoreboardEvent = -1; // Reset scoreboard throttle
+                        scoreboardInitialized = false; // Reset scoreboard elements
                         updateAnimationTime(0);
                         updateStepButtons();
                         break;
@@ -1625,6 +1738,222 @@
             };
         }
 
+        // Ranking points by position (1st to 8th)
+        const RANKING_POINTS = [1000, 720, 600, 480, 400, 320, 240, 160];
+
+        // Get current position info for a car at a given animation time
+        function getCarPositionInfo(carId, targetEventIndex, progressInEvent) {
+            const trajectory = animationState.carTrajectories[carId];
+            if (!trajectory || trajectory.length === 0) return null;
+
+            const maxEventIndex = animationState.carMaxEventIndex[carId] || -1;
+            const globalMaxEventIndex = animationState.globalMaxEventIndex || -1;
+            const carFinished = animationState.carFinished[carId] || false;
+
+            // Check if car has crashed
+            const stoppedEarly = maxEventIndex >= 0 && maxEventIndex < globalMaxEventIndex && !carFinished;
+            const hasCrashed = stoppedEarly && targetEventIndex > maxEventIndex;
+
+            // Find the current point in the trajectory
+            let point = null;
+            for (let i = trajectory.length - 1; i >= 0; i--) {
+                if (trajectory[i].eventIndex <= targetEventIndex) {
+                    point = trajectory[i];
+                    break;
+                }
+            }
+            if (!point) point = trajectory[0];
+
+            const spaceId = point.spaceId;
+            const lapIndex = point.lapIndex || 0;
+            const dist = spaceId ? (animationState.distances[String(spaceId)] || 999) : 999;
+
+            return {
+                carId,
+                lapIndex,
+                distance: dist,
+                hasCrashed,
+                carFinished
+            };
+        }
+
+        // Compute car rankings and player points at a given animation time
+        function computeScoreboard(currentTime) {
+            const targetEventIndex = Math.floor(currentTime / animationState.timePerEvent);
+            const progressInEvent = (currentTime % animationState.timePerEvent) / animationState.timePerEvent;
+            const carIds = animationState.carIds;
+            const carToPlayer = animationState.carToPlayer;
+
+            // Get position info for each car
+            const carPositions = [];
+            for (const carId of carIds) {
+                const info = getCarPositionInfo(carId, targetEventIndex, progressInEvent);
+                if (info) carPositions.push(info);
+            }
+
+            // Sort cars by ranking: finished first, then by lap (desc), then by distance from finish (asc)
+            // Crashed cars are ranked last
+            carPositions.sort((a, b) => {
+                // Crashed cars go last
+                if (a.hasCrashed && !b.hasCrashed) return 1;
+                if (!a.hasCrashed && b.hasCrashed) return -1;
+                if (a.hasCrashed && b.hasCrashed) return 0;
+                // Finished cars go first
+                if (a.carFinished && !b.carFinished) return -1;
+                if (!a.carFinished && b.carFinished) return 1;
+                // Higher lap first
+                if (a.lapIndex !== b.lapIndex) return b.lapIndex - a.lapIndex;
+                // Smaller distance first (closer to finish)
+                return a.distance - b.distance;
+            });
+
+            // Assign points per car
+            const carPoints = {};
+            for (let i = 0; i < carPositions.length; i++) {
+                const car = carPositions[i];
+                if (car.hasCrashed) {
+                    carPoints[car.carId] = 0;
+                } else {
+                    carPoints[car.carId] = (i < RANKING_POINTS.length) ? RANKING_POINTS[i] : 0;
+                }
+            }
+
+            // Aggregate points by player
+            const playerPoints = {};
+            const playerCars = {};
+            for (const car of carPositions) {
+                const playerId = carToPlayer[car.carId];
+                if (!playerId) continue;
+                const playerName = player_label[playerId] || playerId;
+                if (!playerPoints[playerName]) {
+                    playerPoints[playerName] = 0;
+                    playerCars[playerName] = [];
+                }
+                playerPoints[playerName] += carPoints[car.carId];
+                const rank = carPositions.indexOf(car) + 1;
+                playerCars[playerName].push({
+                    carId: car.carId,
+                    rank,
+                    points: carPoints[car.carId],
+                    crashed: car.hasCrashed
+                });
+            }
+
+            return { playerPoints, playerCars, targetEventIndex };
+        }
+
+        // Update the scoreboard DOM with sliding animation
+        let lastScoreboardEvent = -1; // Throttle DOM updates
+        const scoreboardElements = {}; // Persistent DOM elements keyed by player name
+        const SCOREBOARD_ROW_HEIGHT = 52; // Height of each player block (row + cars detail)
+        let scoreboardInitialized = false;
+
+        function initScoreboard(sortedPlayers, playerCars) {
+            const container = document.getElementById('scoreboard-players');
+            if (!container) return;
+            container.innerHTML = '';
+
+            for (let i = 0; i < sortedPlayers.length; i++) {
+                const [playerName, points] = sortedPlayers[i];
+                const cars = playerCars[playerName];
+
+                // Get player color
+                const colors = playerColors[playerName];
+                const colorStr = colors ? colors.primary : 'rgba(128,128,128,0.9)';
+
+                // Create persistent block
+                const block = document.createElement('div');
+                block.className = 'scoreboard-player-block';
+                block.style.transform = `translateY(${i * SCOREBOARD_ROW_HEIGHT}px)`;
+
+                // Player row
+                const row = document.createElement('div');
+                row.className = 'scoreboard-player';
+                row.innerHTML = `
+                    <span class="scoreboard-rank rank-other">${i + 1}</span>
+                    <span class="scoreboard-color" style="background-color: ${colorStr}"></span>
+                    <span class="scoreboard-name">${playerName}</span>
+                    <span class="scoreboard-points">${points}</span>
+                `;
+                block.appendChild(row);
+
+                // Car details
+                const carsDiv = document.createElement('div');
+                carsDiv.className = 'scoreboard-cars';
+                const carDetails = cars.map(c =>
+                    c.crashed ? `Car ${c.carId}: 💥 0` : `Car ${c.carId}: P${c.rank} (${c.points})`
+                ).join(' · ');
+                carsDiv.textContent = carDetails;
+                block.appendChild(carsDiv);
+
+                container.appendChild(block);
+                scoreboardElements[playerName] = block;
+            }
+
+            // Set container height
+            container.style.height = (sortedPlayers.length * SCOREBOARD_ROW_HEIGHT) + 'px';
+            scoreboardInitialized = true;
+        }
+
+        function updateScoreboard(currentTime) {
+            const { playerPoints, playerCars, targetEventIndex } = computeScoreboard(currentTime);
+
+            // Only update DOM when event changes to avoid excessive updates
+            if (targetEventIndex === lastScoreboardEvent) return;
+            lastScoreboardEvent = targetEventIndex;
+
+            // Update event counter
+            const eventLabel = document.getElementById('scoreboard-event');
+            if (eventLabel) {
+                eventLabel.textContent = `Event ${targetEventIndex + 1}`;
+            }
+
+            // Sort players by points (descending)
+            const sortedPlayers = Object.entries(playerPoints)
+                .sort((a, b) => b[1] - a[1]);
+
+            // Initialize elements on first call
+            if (!scoreboardInitialized) {
+                initScoreboard(sortedPlayers, playerCars);
+                return;
+            }
+
+            // Update positions and content for each player
+            for (let i = 0; i < sortedPlayers.length; i++) {
+                const [playerName, points] = sortedPlayers[i];
+                const cars = playerCars[playerName];
+                const block = scoreboardElements[playerName];
+
+                if (!block) continue;
+
+                // Slide to new position
+                block.style.transform = `translateY(${i * SCOREBOARD_ROW_HEIGHT}px)`;
+
+                // Update rank number and color
+                const rankEl = block.querySelector('.scoreboard-rank');
+                if (rankEl) {
+                    rankEl.textContent = i + 1;
+                    rankEl.className = 'scoreboard-rank ' +
+                        (i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other');
+                }
+
+                // Update points
+                const pointsEl = block.querySelector('.scoreboard-points');
+                if (pointsEl) {
+                    pointsEl.textContent = points;
+                }
+
+                // Update car details
+                const carsDiv = block.querySelector('.scoreboard-cars');
+                if (carsDiv) {
+                    const carDetails = cars.map(c =>
+                        c.crashed ? `Car ${c.carId}: 💥 0` : `Car ${c.carId}: P${c.rank} (${c.points})`
+                    ).join(' · ');
+                    carsDiv.textContent = carDetails;
+                }
+            }
+        }
+
         // Update animation using GSAP tweening for smooth continuous motion
         // Uses pure JavaScript elements instead of Plotly
         // Cars are synchronized by event index - all reach Nth event at same time
@@ -1878,6 +2207,9 @@
                     }
                 }
             }
+
+            // Update scoreboard
+            updateScoreboard(currentTime);
         }
 
         createVisualization().catch(err => {

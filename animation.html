@@ -730,14 +730,51 @@
             };
         }
 
+        // Extract per-event rankings from logs
+        // Uses FD_NOTIFICATION_CARMOVEMENTCOMPLETED which contains a ranks array after each move
+        function extractEventRanks(events, logs) {
+            const logEntries = logs.data && logs.data.logs ? logs.data.logs : [];
+            
+            // Collect all ranks updates keyed by car_id (per-car, in order)
+            const carRankUpdates = {};
+            for (const entry of logEntries) {
+                for (const d of (entry.data || [])) {
+                    if (d.type === 'FD_NOTIFICATION_CARMOVEMENTCOMPLETED' && d.args && d.args.ranks) {
+                        const cid = d.args.car_id;
+                        if (!carRankUpdates[cid]) carRankUpdates[cid] = [];
+                        carRankUpdates[cid].push(d.args.ranks);
+                    }
+                }
+            }
+
+            // For each event in events.json, consume the next rank update for that car
+            const carNextIdx = {};
+            let lastKnownRanks = null;
+            const eventRanks = [];
+            for (const evt of events) {
+                const cid = evt.car_id;
+                const updates = carRankUpdates[cid];
+                const idx = carNextIdx[cid] || 0;
+                if (updates && idx < updates.length) {
+                    lastKnownRanks = updates[idx];
+                    carNextIdx[cid] = idx + 1;
+                }
+                // Use the latest known ranking (even if this car had no new update)
+                eventRanks.push(lastKnownRanks || []);
+            }
+            console.log(`Extracted ${eventRanks.length} event ranks`);
+            return eventRanks;
+        }
+
         // Load all JSON files
         async function loadData() {
             const { circuit, table } = getQueryParams();
             
             const circuitBasePath = `assets/circuits_data/${circuit}`;
             const eventsPath = `games/${table}/events.json`;
+            const logsPath = `logs/logs_${table}.json`;
             
-            const [nogaro, events, distances] = await Promise.all([
+            const [nogaro, events, distances, logs] = await Promise.all([
                 fetch(`${circuitBasePath}/circuit.json`).then(r => {
                     if (!r.ok) throw new Error(`Failed to load circuit.json: ${r.status}`);
                     return r.json();
@@ -749,8 +786,18 @@
                 fetch(`${circuitBasePath}/circuit_graph_colored_distances.json`).then(r => {
                     if (!r.ok) throw new Error(`Failed to load distances.json: ${r.status}`);
                     return r.json();
-                })
+                }),
+                fetch(logsPath).then(r => {
+                    if (!r.ok) {
+                        console.warn(`Logs file not found: ${logsPath}, rankings will be estimated`);
+                        return null;
+                    }
+                    return r.json();
+                }).catch(() => null)
             ]);
+            
+            // Extract per-event rankings from logs
+            const eventRanks = logs ? extractEventRanks(events, logs) : null;
             
             // Always generate carsLapsForUI from events
             console.log('Generating carsLapsForUI from events...');
@@ -774,7 +821,7 @@
             // Organize events by car (no lap splitting) for animation
             const carsLapsForAnimation = organizeEventsByCarAndLap(events, distances);
 
-            return { nogaro, carsLapsForUI, carsLapsForAnimation, events, distances, carToPlayer };
+            return { nogaro, carsLapsForUI, carsLapsForAnimation, events, distances, carToPlayer, eventRanks };
         }
 
             // Animation state
@@ -799,12 +846,14 @@
             carFinished: {}, // Track which cars crossed the finish line (no explosion for these)
             distances: {}, // Space distances from finish line
             carToPlayer: {}, // Map car_id -> player_id
-            carIds: [] // All car IDs
+            carIds: [], // All car IDs
+            carEventSnapshots: {}, // Pre-computed per-event position snapshots for ranking
+            eventRanks: null // Per-event rankings from game logs [eventIdx] -> [car_id, ...]
         };
 
         // Create the visualization
         async function createVisualization() {
-            const { nogaro, carsLapsForUI, carsLapsForAnimation, events, distances, carToPlayer } = await loadData();
+            const { nogaro, carsLapsForUI, carsLapsForAnimation, events, distances, carToPlayer, eventRanks } = await loadData();
             const { circuit } = getQueryParams();
 
             const imageWidth = nogaro.width;
@@ -830,6 +879,7 @@
             animationState.distances = distances;
             animationState.carToPlayer = carToPlayer;
             animationState.carIds = carIds;
+            animationState.eventRanks = eventRanks;
 
             // Build trajectories for all cars using events without lap splitting (for animation)
             animationState.carTrajectories = {};
@@ -892,6 +942,34 @@
                         animationState.carFinished[carId] = true;
                     }
                 }
+            }
+
+            // Build per-event snapshots for ranking (using original flat events)
+            animationState.carEventSnapshots = {};
+            for (const carId of carIds) {
+                const carLaps = carsLapsForAnimation[carId];
+                if (carLaps && carLaps.length > 0) {
+                    // carsLapsForAnimation stores [allEventsArray] — single element
+                    animationState.carEventSnapshots[carId] = buildCarEventSnapshots(
+                        carId, carLaps[0], distances
+                    );
+                }
+            }
+            
+            // Build per-car flat event index mapping (carEventIndex → flat event index)
+            // This is needed to correlate animation event indices with eventRanks
+            if (eventRanks) {
+                const carFlatEventIndex = {};
+                const flatEventsByCar = {};
+                for (let flatIdx = 0; flatIdx < events.length; flatIdx++) {
+                    const carId = events[flatIdx].car_id;
+                    if (!flatEventsByCar[carId]) flatEventsByCar[carId] = [];
+                    flatEventsByCar[carId].push(flatIdx);
+                }
+                for (const carId of carIds) {
+                    carFlatEventIndex[carId] = flatEventsByCar[carId] || [];
+                }
+                animationState.carFlatEventIndex = carFlatEventIndex;
             }
 
             // Create figure data
@@ -1741,10 +1819,49 @@
         // Ranking points by position (1st to 8th)
         const RANKING_POINTS = [1000, 720, 600, 480, 400, 320, 240, 160];
 
+        // Pre-compute per-event snapshots for each car so ranking is fast.
+        // Each snapshot has: { lastSpaceId, lapCount, distance }
+        // Built once from the original events, not the Bezier trajectory.
+        function buildCarEventSnapshots(carId, carEvents, distances) {
+            const snapshots = []; // index = event number for this car (0-based)
+            let lapCount = 0;
+            let prevDist = -1;
+
+            for (const event of carEvents) {
+                const spaces = event.spaces || [];
+                if (spaces.length === 0) {
+                    // No movement — carry forward previous snapshot
+                    snapshots.push(snapshots.length > 0
+                        ? { ...snapshots[snapshots.length - 1] }
+                        : { lastSpaceId: null, lapCount: 0, distance: 999 });
+                    continue;
+                }
+
+                // Check every space in this event for finish-line crossings.
+                // Distance counts down as car approaches finish (179 → ... → 0).
+                // When it crosses, distance drops sharply (e.g. 179 → 0).
+                // Detect this sharp drop as a lap completion.
+                for (const spaceId of spaces) {
+                    const d = distances[String(spaceId)];
+                    if (d !== undefined) {
+                        if (prevDist >= 0 && prevDist - d > 30) {
+                            lapCount++;
+                        }
+                        prevDist = d;
+                    }
+                }
+
+                const lastSpace = String(spaces[spaces.length - 1]);
+                const dist = distances[lastSpace] !== undefined ? distances[lastSpace] : 999;
+                snapshots.push({ lastSpaceId: lastSpace, lapCount, distance: dist });
+            }
+            return snapshots;
+        }
+
         // Get current position info for a car at a given animation time
-        function getCarPositionInfo(carId, targetEventIndex, progressInEvent) {
-            const trajectory = animationState.carTrajectories[carId];
-            if (!trajectory || trajectory.length === 0) return null;
+        function getCarPositionInfo(carId, targetEventIndex) {
+            const snapshots = animationState.carEventSnapshots[carId];
+            if (!snapshots || snapshots.length === 0) return null;
 
             const maxEventIndex = animationState.carMaxEventIndex[carId] || -1;
             const globalMaxEventIndex = animationState.globalMaxEventIndex || -1;
@@ -1754,24 +1871,14 @@
             const stoppedEarly = maxEventIndex >= 0 && maxEventIndex < globalMaxEventIndex && !carFinished;
             const hasCrashed = stoppedEarly && targetEventIndex > maxEventIndex;
 
-            // Find the current point in the trajectory
-            let point = null;
-            for (let i = trajectory.length - 1; i >= 0; i--) {
-                if (trajectory[i].eventIndex <= targetEventIndex) {
-                    point = trajectory[i];
-                    break;
-                }
-            }
-            if (!point) point = trajectory[0];
-
-            const spaceId = point.spaceId;
-            const lapIndex = point.lapIndex || 0;
-            const dist = spaceId ? (animationState.distances[String(spaceId)] || 999) : 999;
+            // Clamp to available snapshots
+            const idx = Math.min(targetEventIndex, snapshots.length - 1);
+            const snap = snapshots[Math.max(0, idx)];
 
             return {
                 carId,
-                lapIndex,
-                distance: dist,
+                lapCount: snap.lapCount,
+                distance: snap.distance,
                 hasCrashed,
                 carFinished
             };
@@ -1780,62 +1887,67 @@
         // Compute car rankings and player points at a given animation time
         function computeScoreboard(currentTime) {
             const targetEventIndex = Math.floor(currentTime / animationState.timePerEvent);
-            const progressInEvent = (currentTime % animationState.timePerEvent) / animationState.timePerEvent;
             const carIds = animationState.carIds;
             const carToPlayer = animationState.carToPlayer;
+            const eventRanks = animationState.eventRanks;
 
-            // Get position info for each car
-            const carPositions = [];
-            for (const carId of carIds) {
-                const info = getCarPositionInfo(carId, targetEventIndex, progressInEvent);
-                if (info) carPositions.push(info);
-            }
-
-            // Sort cars by ranking: finished first, then by lap (desc), then by distance from finish (asc)
-            // Crashed cars are ranked last
-            carPositions.sort((a, b) => {
-                // Crashed cars go last
-                if (a.hasCrashed && !b.hasCrashed) return 1;
-                if (!a.hasCrashed && b.hasCrashed) return -1;
-                if (a.hasCrashed && b.hasCrashed) return 0;
-                // Finished cars go first
-                if (a.carFinished && !b.carFinished) return -1;
-                if (!a.carFinished && b.carFinished) return 1;
-                // Higher lap first
-                if (a.lapIndex !== b.lapIndex) return b.lapIndex - a.lapIndex;
-                // Smaller distance first (closer to finish)
-                return a.distance - b.distance;
-            });
-
-            // Assign points per car
-            const carPoints = {};
-            for (let i = 0; i < carPositions.length; i++) {
-                const car = carPositions[i];
-                if (car.hasCrashed) {
-                    carPoints[car.carId] = 0;
-                } else {
-                    carPoints[car.carId] = (i < RANKING_POINTS.length) ? RANKING_POINTS[i] : 0;
+            // Get the ranking at the latest flat event index for this animation time
+            let carRanking = null;
+            if (eventRanks && animationState.carFlatEventIndex) {
+                let latestFlatIdx = -1;
+                for (const carId of carIds) {
+                    const flatIndices = animationState.carFlatEventIndex[carId];
+                    if (!flatIndices) continue;
+                    const carEvtIdx = Math.min(targetEventIndex, flatIndices.length - 1);
+                    if (carEvtIdx >= 0 && flatIndices[carEvtIdx] > latestFlatIdx) {
+                        latestFlatIdx = flatIndices[carEvtIdx];
+                    }
+                }
+                if (latestFlatIdx >= 0 && latestFlatIdx < eventRanks.length) {
+                    carRanking = eventRanks[latestFlatIdx];
+                } else if (eventRanks.length > 0) {
+                    carRanking = eventRanks[eventRanks.length - 1];
                 }
             }
 
-            // Aggregate points by player
+            if (!carRanking) {
+                // No log data — use car IDs in default order
+                carRanking = carIds.map(Number);
+            }
+
+            // Build a set of car IDs currently in the ranking
+            const inRanking = new Set(carRanking.map(String));
+
+            // Position in ranks array = race position. Assign points directly.
+            // Cars NOT in the ranking have been eliminated (0 points).
+            const carPoints = {};
+            const carRank = {};
+            for (let i = 0; i < carRanking.length; i++) {
+                const carId = String(carRanking[i]);
+                carPoints[carId] = (i < RANKING_POINTS.length) ? RANKING_POINTS[i] : 0;
+                carRank[carId] = i + 1;
+            }
+
+            // Aggregate points by player — include ALL cars, not just ranked ones
             const playerPoints = {};
             const playerCars = {};
-            for (const car of carPositions) {
-                const playerId = carToPlayer[car.carId];
+            for (const carId of carIds) {
+                const cid = String(carId);
+                const playerId = carToPlayer[cid];
                 if (!playerId) continue;
                 const playerName = player_label[playerId] || playerId;
                 if (!playerPoints[playerName]) {
                     playerPoints[playerName] = 0;
                     playerCars[playerName] = [];
                 }
-                playerPoints[playerName] += carPoints[car.carId];
-                const rank = carPositions.indexOf(car) + 1;
+                const isEliminated = !inRanking.has(cid);
+                const points = isEliminated ? 0 : (carPoints[cid] || 0);
+                playerPoints[playerName] += points;
                 playerCars[playerName].push({
-                    carId: car.carId,
-                    rank,
-                    points: carPoints[car.carId],
-                    crashed: car.hasCrashed
+                    carId: cid,
+                    rank: isEliminated ? '-' : carRank[cid],
+                    points: points,
+                    crashed: isEliminated
                 });
             }
 

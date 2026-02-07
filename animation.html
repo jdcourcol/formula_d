@@ -85,61 +85,29 @@
         .car-marker.mikeggg {
             background-position: -528px -356px; /* Green car - fourth position (3 × 176px = 528px) */
         }
-        /* Fire animation for stopped cars */
-        .fire-effect {
+        .car-marker.pgetta {
+            background-position: -176px -356px; /* Blue car - second position (1 × 176px = 176px) */
+        }
+        /* Explosion effect for crashed cars */
+        .explosion-effect {
             position: absolute;
-            bottom: -20px;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
-            width: 40px;
-            height: 60px;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
             pointer-events: none;
-            z-index: 999;
+            z-index: 1001;
             opacity: 0;
+            display: none;
         }
-        .fire-effect.active {
-            opacity: 1;
+        .explosion-effect img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
-        .fire-particle {
-            position: absolute;
-            width: 8px;
-            height: 8px;
-            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-            background: radial-gradient(circle, #ff6b00 0%, #ff3300 50%, #cc0000 100%);
-            box-shadow: 0 0 10px #ff6b00, 0 0 20px #ff3300;
-        }
-        @keyframes fire-flicker {
-            0%, 100% { 
-                transform: translateX(-50%) translateY(0) scale(1);
-                opacity: 0.8;
-            }
-            25% { 
-                transform: translateX(-45%) translateY(-5px) scale(1.1);
-                opacity: 1;
-            }
-            50% { 
-                transform: translateX(-55%) translateY(-10px) scale(0.9);
-                opacity: 0.9;
-            }
-            75% { 
-                transform: translateX(-50%) translateY(-5px) scale(1.05);
-                opacity: 1;
-            }
-        }
-        .fire-particle {
-            animation: fire-flicker 0.3s infinite ease-in-out;
-        }
-        .fire-particle:nth-child(1) {
-            left: 20%;
-            animation-delay: 0s;
-        }
-        .fire-particle:nth-child(2) {
-            left: 50%;
-            animation-delay: 0.1s;
-        }
-        .fire-particle:nth-child(3) {
-            left: 80%;
-            animation-delay: 0.2s;
+        .explosion-effect.active {
+            display: block;
         }
         .animation-controls {
             margin-bottom: 10px;
@@ -268,6 +236,7 @@
             '88064074':'jdregister',
             '88482137': 'mikeggg',
             '91103118': 'jxcr0w',
+            '88482311': 'pgetta',
         };
 
         // Color palette for players
@@ -283,6 +252,10 @@
             'mikeggg': {
                 primary: 'rgba(0, 255, 0, 0.9)',        // Green
                 secondary: 'rgba(0, 128, 0, 0.9)'        // Dark Green
+            },
+            'pgetta': {
+                primary: 'rgba(0, 100, 255, 0.9)',       // Blue
+                secondary: 'rgba(0, 60, 180, 0.9)'       // Dark Blue
             }
         };
         
@@ -734,7 +707,10 @@
             imageHeight: 0, // Image height for coordinate conversion
             carMaxEventIndex: {}, // Maximum event index for each car
             isStepping: false, // Flag to track if step animation is in progress
-            stepTween: null // GSAP tween for step animation
+            stepTween: null, // GSAP tween for step animation
+            carCrashTime: {}, // Time when each car's crash was first detected
+            crashExplosionDuration: 2000, // How long to show the explosion (ms)
+            carFinished: {} // Track which cars crossed the finish line (no explosion for these)
         };
 
         // Create the visualization
@@ -792,11 +768,22 @@
                 }
                 animationState.carMaxEventIndex[carId] = maxEventIndex;
                 maxEventCount = Math.max(maxEventCount, eventCount);
+                
+                // Determine if car crossed the finish line by checking the distance
+                // of its last space from the finish. A small distance means it finished.
+                if (trajectory.length > 0) {
+                    const lastPoint = trajectory[trajectory.length - 1];
+                    const lastSpaceId = lastPoint.spaceId;
+                    const lastDist = lastSpaceId ? distances[String(lastSpaceId)] : undefined;
+                    // If last space distance <= 5, consider the car finished the race
+                    animationState.carFinished[carId] = (lastDist !== undefined && lastDist <= 5);
+                }
             }
             
             // Calculate max time based on number of events
             // All cars will reach their Nth event at the same time
             animationState.maxTime = maxEventCount * animationState.timePerEvent;
+            animationState.globalMaxEventIndex = maxEventCount - 1; // Store for crash detection
 
             // Create figure data
             const data = [];
@@ -1190,7 +1177,7 @@
                 marker.className = 'car-marker';
                 
                 // Add player-specific class for sprite positioning
-                if (playerName && (playerName === 'jdregister' || playerName === 'jxcr0w' || playerName === 'mikeggg')) {
+                if (playerName && (playerName === 'jdregister' || playerName === 'jxcr0w' || playerName === 'mikeggg' || playerName === 'pgetta')) {
                     marker.classList.add(playerName);
                 } else {
                     // Fallback: use first car (yellow/jdregister) for unknown players
@@ -1200,19 +1187,16 @@
                 marker.id = `car-marker-${carId}`;
                 marker.style.display = 'none'; // Hidden until animation starts
                 
-                // Create fire effect element
-                const fireEffect = document.createElement('div');
-                fireEffect.className = 'fire-effect';
-                fireEffect.id = `fire-effect-${carId}`;
+                // Create explosion effect element
+                const explosionEffect = document.createElement('div');
+                explosionEffect.className = 'explosion-effect';
+                explosionEffect.id = `explosion-effect-${carId}`;
+                const explosionImg = document.createElement('img');
+                explosionImg.src = 'assets/explosion.webp';
+                explosionImg.alt = 'Explosion';
+                explosionEffect.appendChild(explosionImg);
                 
-                // Create fire particles
-                for (let i = 0; i < 3; i++) {
-                    const particle = document.createElement('div');
-                    particle.className = 'fire-particle';
-                    fireEffect.appendChild(particle);
-                }
-                
-                marker.appendChild(fireEffect);
+                marker.appendChild(explosionEffect);
                 plotContainer.appendChild(marker);
                 
                 // Store marker element reference
@@ -1239,6 +1223,7 @@
             restartBtn.addEventListener('click', () => {
                 stopAnimation();
                 animationState.currentTime = 0;
+                animationState.carCrashTime = {}; // Reset crash state
                 updateAnimationTime(0);
                 updateStepButtons();
             });
@@ -1336,6 +1321,7 @@
                         e.preventDefault();
                         stopAnimation();
                         animationState.currentTime = 0;
+                        animationState.carCrashTime = {}; // Reset crash state
                         updateAnimationTime(0);
                         updateStepButtons();
                         break;
@@ -1741,18 +1727,66 @@
                     point = trajectory[trajectory.length - 1];
                 }
                 
-                // Check if car has stopped (reached its last event) but animation is still running
+                // Check if car has crashed (stopped early, before the global animation ends)
                 const maxEventIndex = animationState.carMaxEventIndex[carId] || -1;
+                const globalMaxEventIndex = animationState.globalMaxEventIndex || -1;
                 const currentCarEventIndex = point ? point.eventIndex : -1;
                 const hasStopped = maxEventIndex >= 0 && currentCarEventIndex >= maxEventIndex;
-                const fireEffect = marker.querySelector('.fire-effect');
+                const stoppedEarly = hasStopped && maxEventIndex < globalMaxEventIndex; // Stopped before others
+                const carFinished = animationState.carFinished[carId] || false; // Crossed finish line
+                const isLastRound = targetEventIndex >= globalMaxEventIndex; // Last round of the animation
+                // Only show explosion if car stopped early, didn't cross finish, and it's not the last round
+                const shouldExplode = stoppedEarly && !carFinished && !isLastRound;
+                const explosionEffect = marker.querySelector('.explosion-effect');
                 
-                // Show fire effect if car has stopped and animation is still running
-                if (fireEffect) {
-                    if (hasStopped && animationState.isPlaying && maxEventIndex >= 0) {
-                        fireEffect.classList.add('active');
+                // Handle crash explosion
+                if (shouldExplode && targetEventIndex > maxEventIndex) {
+                    // Car has crashed - detect when crash first happens
+                    if (!animationState.carCrashTime[carId]) {
+                        animationState.carCrashTime[carId] = currentTime;
+                    }
+                    
+                    const timeSinceCrash = currentTime - animationState.carCrashTime[carId];
+                    
+                    if (timeSinceCrash < animationState.crashExplosionDuration) {
+                        // Show explosion, fade it in and out
+                        if (explosionEffect) {
+                            explosionEffect.classList.add('active');
+                            const progress = timeSinceCrash / animationState.crashExplosionDuration;
+                            // Fade in quickly, then fade out
+                            let opacity;
+                            if (progress < 0.15) {
+                                opacity = progress / 0.15; // Fade in over first 15%
+                            } else if (progress > 0.6) {
+                                opacity = 1 - ((progress - 0.6) / 0.4); // Fade out over last 40%
+                            } else {
+                                opacity = 1;
+                            }
+                            explosionEffect.style.opacity = opacity;
+                        }
+                        // Car sprite still visible during explosion start
+                        marker.style.backgroundImage = '';
                     } else {
-                        fireEffect.classList.remove('active');
+                        // Explosion done - hide everything
+                        if (explosionEffect) {
+                            explosionEffect.classList.remove('active');
+                            explosionEffect.style.opacity = 0;
+                        }
+                        marker.style.backgroundImage = 'none';
+                    }
+                } else {
+                    // Car is still racing or hasn't crashed
+                    if (explosionEffect) {
+                        explosionEffect.classList.remove('active');
+                        explosionEffect.style.opacity = 0;
+                    }
+                    // Restore car image if going backward past crash point
+                    if (marker.style.backgroundImage === 'none') {
+                        marker.style.backgroundImage = '';
+                    }
+                    // Reset crash time if we've gone back before the crash
+                    if (animationState.carCrashTime[carId] && targetEventIndex <= maxEventIndex) {
+                        delete animationState.carCrashTime[carId];
                     }
                 }
                 

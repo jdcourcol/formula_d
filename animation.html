@@ -1413,9 +1413,9 @@
             speedLabel.textContent = 'Speed:';
             const speedInput = document.createElement('input');
             speedInput.type = 'range';
-            speedInput.min = '0.5';
-            speedInput.max = '5';
-            speedInput.step = '0.5';
+            speedInput.min = '0.1';
+            speedInput.max = '3';
+            speedInput.step = '0.1';
             speedInput.value = '1';
             speedInput.addEventListener('input', (e) => {
                 animationState.speed = parseFloat(e.target.value);
@@ -1423,7 +1423,8 @@
             const speedValue = document.createElement('span');
             speedValue.textContent = '1x';
             speedInput.addEventListener('input', (e) => {
-                speedValue.textContent = e.target.value + 'x';
+                const val = parseFloat(e.target.value);
+                speedValue.textContent = (Number.isInteger(val) ? val : val.toFixed(1)) + 'x';
             });
             speedControl.appendChild(speedLabel);
             speedControl.appendChild(speedInput);
@@ -1496,13 +1497,14 @@
                         if (speedInput) {
                             const currentSpeed = parseFloat(speedInput.value);
                             const maxSpeed = parseFloat(speedInput.max);
-                            const step = parseFloat(speedInput.step) || 0.5;
-                            const newSpeed = Math.min(currentSpeed + step, maxSpeed);
+                            // Adaptive step: 0.1 when below 1x, 0.5 when at or above 1x
+                            const step = currentSpeed < 1 ? 0.1 : 0.5;
+                            const newSpeed = Math.min(Math.round((currentSpeed + step) * 10) / 10, maxSpeed);
                             speedInput.value = newSpeed;
                             animationState.speed = newSpeed;
                             const speedValue = speedInput.nextElementSibling;
                             if (speedValue) {
-                                speedValue.textContent = newSpeed + 'x';
+                                speedValue.textContent = (Number.isInteger(newSpeed) ? newSpeed : newSpeed.toFixed(1)) + 'x';
                             }
                             // Trigger input event to update display
                             speedInput.dispatchEvent(new Event('input'));
@@ -1516,13 +1518,14 @@
                         if (speedInputDec) {
                             const currentSpeed = parseFloat(speedInputDec.value);
                             const minSpeed = parseFloat(speedInputDec.min);
-                            const step = parseFloat(speedInputDec.step) || 0.5;
-                            const newSpeed = Math.max(currentSpeed - step, minSpeed);
+                            // Adaptive step: 0.1 when at or below 1x, 0.5 when above 1x
+                            const step = currentSpeed <= 1 ? 0.1 : 0.5;
+                            const newSpeed = Math.max(Math.round((currentSpeed - step) * 10) / 10, minSpeed);
                             speedInputDec.value = newSpeed;
                             animationState.speed = newSpeed;
                             const speedValue = speedInputDec.nextElementSibling;
                             if (speedValue) {
-                                speedValue.textContent = newSpeed + 'x';
+                                speedValue.textContent = (Number.isInteger(newSpeed) ? newSpeed : newSpeed.toFixed(1)) + 'x';
                             }
                             // Trigger input event to update display
                             speedInputDec.dispatchEvent(new Event('input'));
